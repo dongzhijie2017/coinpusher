@@ -22,18 +22,16 @@ class GameScene extends Phaser.Scene {
   private tip!: Phaser.GameObjects.Text;
   private upgradeTexts: Partial<Record<UpgradeId, Phaser.GameObjects.Text>> = {};
   private buffText!: Phaser.GameObjects.Text;
+  private spawnX = WIDTH / 2;
+  private dropGuide!: Phaser.GameObjects.Rectangle;
 
   constructor() {
     super("game");
   }
 
-  preload(): void {
-    this.load.image("hero", "/assets/coin-pusher-hero.png");
-  }
-
   create(): void {
     this.save = loadSave();
-    this.matter.world.setBounds(34, 104, WIDTH - 68, 520, 32, true, true, false, true);
+    this.matter.world.setBounds(54, 104, WIDTH - 108, 510, 32, true, true, false, true);
     this.matter.world.engine.positionIterations = 8;
     this.matter.world.engine.velocityIterations = 6;
     this.matter.world.engine.constraintIterations = 2;
@@ -72,14 +70,20 @@ class GameScene extends Phaser.Scene {
 
   private createTextures(): void {
     const coin = this.add.graphics();
-    coin.fillStyle(0xffd45a, 1);
+    coin.fillStyle(0xffd86a, 1);
     coin.fillCircle(32, 32, 30);
-    coin.lineStyle(5, 0xf6a821, 1);
-    coin.strokeCircle(32, 32, 26);
-    coin.lineStyle(2, 0xfff2a8, 0.85);
+    coin.fillStyle(0xf5a928, 1);
+    coin.fillCircle(32, 32, 24);
+    coin.fillStyle(0xffd86a, 1);
+    coin.fillCircle(32, 32, 20);
+    coin.lineStyle(4, 0xfff2a8, 0.95);
+    coin.strokeCircle(32, 32, 28);
+    coin.lineStyle(3, 0xbe7418, 0.8);
+    coin.strokeCircle(32, 32, 23);
+    coin.lineStyle(2, 0xfff2a8, 0.9);
     coin.strokeCircle(32, 32, 18);
-    coin.fillStyle(0xfff2a8, 0.7);
-    coin.fillCircle(23, 22, 7);
+    coin.fillStyle(0xfff7b0, 0.8);
+    coin.fillEllipse(23, 22, 15, 9);
     coin.generateTexture("coin", 64, 64);
     coin.destroy();
 
@@ -97,41 +101,56 @@ class GameScene extends Phaser.Scene {
   }
 
   private createBackdrop(): void {
-    this.add.rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x0b1020);
-    const hero = this.add.image(WIDTH / 2, 178, "hero");
-    hero.setDisplaySize(500, 281);
-    hero.setAlpha(0.28);
-
-    this.add.rectangle(WIDTH / 2, 90, WIDTH, 180, 0x101936, 0.78);
-    this.add.rectangle(WIDTH / 2, 385, WIDTH, 520, 0x121a2d);
-    this.add.rectangle(WIDTH / 2, 650, WIDTH, 220, 0x090d19);
+    this.add.rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x5fc7ff);
+    this.add.rectangle(WIDTH / 2, 120, WIDTH, 240, 0x8fe4ff, 0.45);
+    this.add.rectangle(WIDTH / 2, 500, WIDTH, 520, 0x0874d8, 0.32);
   }
 
   private createMachine(): void {
-    this.add.rectangle(WIDTH / 2, 360, 370, 520, 0x2f3f75).setStrokeStyle(3, 0xf1c35b);
-    this.add.rectangle(WIDTH / 2, 360, 318, 460, 0x14213d).setStrokeStyle(2, 0x70d6ff, 0.8);
-    this.add.rectangle(WIDTH / 2, 540, 300, 34, 0x563a74).setStrokeStyle(2, 0xf1c35b);
-    this.add.rectangle(WIDTH / 2, 590, 290, 46, 0x28314f).setStrokeStyle(2, 0x70d6ff);
+    this.add.rectangle(WIDTH / 2, 366, 392, 550, 0x0080ff).setStrokeStyle(4, 0x6ed7ff);
+    this.add.rectangle(WIDTH / 2, 354, 330, 462, 0xa7ecff, 0.18).setStrokeStyle(2, 0xd8f7ff, 0.7);
+    this.add.rectangle(72, 360, 22, 470, 0x0067cb).setStrokeStyle(2, 0x6ed7ff, 0.8);
+    this.add.rectangle(WIDTH - 72, 360, 22, 470, 0x0067cb).setStrokeStyle(2, 0x6ed7ff, 0.8);
+    this.add.rectangle(112, 340, 12, 390, 0xffffff, 0.12).setAngle(12);
+    this.add.rectangle(WIDTH - 112, 340, 12, 390, 0xffffff, 0.12).setAngle(-12);
+
+    this.add.rectangle(WIDTH / 2, 126, 142, 34, 0x0d315f).setStrokeStyle(3, 0xd8e4f2);
+    this.add.rectangle(WIDTH / 2, 126, 96, 18, 0x071932);
+    this.dropGuide = this.add.rectangle(this.spawnX, 151, 32, 4, 0xfff2a8, 0.9);
+
+    this.add.rectangle(WIDTH / 2, 558, 314, 30, 0x0067cb).setStrokeStyle(2, 0x6ed7ff);
+    this.add.rectangle(WIDTH / 2, 606, 152, 58, 0xd8e4f2).setStrokeStyle(3, 0x24354d);
+    this.add.rectangle(114, 606, 74, 58, 0x005bb4).setStrokeStyle(3, 0x6ed7ff);
+    this.add.rectangle(WIDTH - 114, 606, 74, 58, 0x005bb4).setStrokeStyle(3, 0x6ed7ff);
 
     this.add.text(WIDTH / 2, 50, "街机修复计划", {
-      color: "#fff7d1",
+      color: "#07315f",
       fontSize: "26px",
       fontStyle: "700"
     }).setOrigin(0.5);
 
     this.add.text(WIDTH / 2, 79, "收集零件 · 升级机器 · 解锁图鉴", {
-      color: "#9fb7ff",
+      color: "#0d5fa8",
       fontSize: "14px"
     }).setOrigin(0.5);
 
-    this.matter.add.rectangle(WIDTH / 2, 612, 300, 18, { isStatic: true, label: "front-lip" });
-    this.matter.add.rectangle(58, 360, 18, 500, { isStatic: true, label: "left-wall" });
-    this.matter.add.rectangle(WIDTH - 58, 360, 18, 500, { isStatic: true, label: "right-wall" });
+    this.matter.add.rectangle(WIDTH / 2, 560, 314, 18, { isStatic: true, label: "front-lip" });
+    this.matter.add.rectangle(72, 360, 18, 500, { isStatic: true, label: "left-wall" });
+    this.matter.add.rectangle(WIDTH - 72, 360, 18, 500, { isStatic: true, label: "right-wall" });
+
+    const aimZone = this.add.zone(WIDTH / 2, 126, 280, 92);
+    aimZone.setInteractive({ useHandCursor: true });
+    aimZone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      this.spawnX = Phaser.Math.Clamp(pointer.x, 135, 295);
+      this.dropGuide.setX(this.spawnX);
+      this.dropCoin(this.spawnX);
+    });
   }
 
   private createPusher(): void {
-    this.pusherVisual = this.add.rectangle(WIDTH / 2, 274, 268, 36, 0x8b6ef3).setStrokeStyle(3, 0xf1c35b);
-    this.pusher = this.matter.add.rectangle(WIDTH / 2, 274, 286, 58, {
+    this.pusherVisual = this.add.rectangle(WIDTH / 2, 286, 286, 42, 0xd8e4f2).setStrokeStyle(3, 0x8aa2bd);
+    this.add.rectangle(WIDTH / 2, 274, 260, 8, 0xffffff, 0.35);
+    this.pusher = this.matter.add.rectangle(WIDTH / 2, 286, 304, 62, {
       isStatic: true,
       label: "pusher",
       friction: 0.18
@@ -139,13 +158,13 @@ class GameScene extends Phaser.Scene {
   }
 
   private createLuckySensor(): void {
-    this.add.text(WIDTH / 2, 187, "机关检索", {
-      color: "#d8f7ff",
+    this.add.text(WIDTH / 2, 190, "机关检索", {
+      color: "#07315f",
       fontSize: "13px",
       fontStyle: "700"
     }).setOrigin(0.5);
 
-    this.luckySensor = this.matter.add.image(WIDTH / 2, 218, "lucky-sensor", undefined, {
+    this.luckySensor = this.matter.add.image(WIDTH / 2, 220, "lucky-sensor", undefined, {
       isSensor: true,
       isStatic: true,
       label: "lucky-sensor"
@@ -163,18 +182,18 @@ class GameScene extends Phaser.Scene {
 
   private createHud(): void {
     this.hud = this.add.text(24, 108, "", {
-      color: "#ffffff",
+      color: "#07315f",
       fontSize: "15px",
       lineSpacing: 7
     });
 
-    this.tip = this.add.text(WIDTH / 2, 626, "目标：收集 200 Gold，修复第一台街机", {
-      color: "#fff0a6",
+    this.tip = this.add.text(WIDTH / 2, 638, "目标：收集 200 Gold，修复第一台街机", {
+      color: "#fff7d1",
       fontSize: "14px"
     }).setOrigin(0.5);
 
     this.buffText = this.add.text(WIDTH - 24, 108, "", {
-      color: "#aef27a",
+      color: "#0d5fa8",
       fontSize: "12px",
       align: "right",
       lineSpacing: 5
@@ -182,23 +201,32 @@ class GameScene extends Phaser.Scene {
   }
 
   private createControls(): void {
-    const button = this.add.rectangle(WIDTH / 2, 696, 168, 56, 0xf2b84b).setStrokeStyle(3, 0xfff0a6);
-    const label = this.add.text(WIDTH / 2, 696, "投币", {
-      color: "#2b1b04",
-      fontSize: "24px",
+    const button = this.add.circle(76, 704, 38, 0xd8e4f2).setStrokeStyle(5, 0x24354d);
+    const buttonGlow = this.add.circle(76, 704, 27, 0xffffff, 0.42);
+    const label = this.add.text(76, 704, "投币", {
+      color: "#07315f",
+      fontSize: "16px",
       fontStyle: "700"
     }).setOrigin(0.5);
     button.setInteractive({ useHandCursor: true });
     label.setInteractive({ useHandCursor: true });
 
-    const drop = () => this.dropCoin();
+    const drop = () => {
+      this.tweens.add({
+        targets: [button, buttonGlow, label],
+        scale: 0.92,
+        duration: 70,
+        yoyo: true
+      });
+      this.dropCoin(this.spawnX);
+    };
     button.on("pointerdown", drop);
     label.on("pointerdown", drop);
 
-    const adButton = this.add.rectangle(92, 696, 118, 46, 0x27496d).setStrokeStyle(2, 0x70d6ff);
-    this.add.text(92, 696, "补给 +30", {
+    const adButton = this.add.rectangle(168, 704, 104, 44, 0x0067cb).setStrokeStyle(2, 0x6ed7ff);
+    this.add.text(168, 704, "补给 +30", {
       color: "#d8f7ff",
-      fontSize: "16px",
+      fontSize: "14px",
       fontStyle: "700"
     }).setOrigin(0.5);
     adButton.setInteractive({ useHandCursor: true });
@@ -211,12 +239,12 @@ class GameScene extends Phaser.Scene {
 
   private createUpgradePanel(): void {
     upgrades.forEach((upgrade, index) => {
-      const y = 654 + index * 31;
-      const x = 286;
-      const bg = this.add.rectangle(x, y, 240, 25, 0x1b2b4a).setStrokeStyle(1, 0x4a78c2);
-      const text = this.add.text(x - 112, y, "", {
+      const y = 674 + index * 28;
+      const x = 318;
+      const bg = this.add.rectangle(x, y, 196, 23, 0x0067cb).setStrokeStyle(1, 0x6ed7ff);
+      const text = this.add.text(x - 90, y, "", {
         color: "#dbe8ff",
-        fontSize: "12px"
+        fontSize: "11px"
       }).setOrigin(0, 0.5);
       bg.setInteractive({ useHandCursor: true });
       bg.on("pointerdown", () => this.buyUpgrade(upgrade.id));
@@ -243,7 +271,7 @@ class GameScene extends Phaser.Scene {
     });
   }
 
-  private dropCoin(): void {
+  private dropCoin(spawnX = this.spawnX): void {
     const now = this.time.now;
     const cooldown = coinCooldown(this.save.upgrades.cooldown);
     if (now - this.lastDrop < cooldown) return;
@@ -254,19 +282,19 @@ class GameScene extends Phaser.Scene {
     this.lastDrop = now;
     this.save.coin -= 1;
 
-    const x = Phaser.Math.Between(145, 285);
+    const x = Phaser.Math.Clamp(spawnX + Phaser.Math.Between(-10, 10), 132, 298);
     const coin = this.matter.add.image(x, 142, "coin", undefined, {
       shape: { type: "circle", radius: 21 },
       restitution: 0.05,
       friction: 0.14,
-      frictionAir: 0.025,
-      density: 0.002,
+      frictionAir: 0.03,
+      density: 0.0022,
       slop: 0.02,
       label: "coin"
     });
     coin.setScale(0.68);
     coin.setBounce(0.05);
-    coin.setFriction(0.14, 0.025, 0.14);
+    coin.setFriction(0.15, 0.03, 0.15);
     coin.setAngularVelocity(Phaser.Math.FloatBetween(-0.08, 0.08));
     this.coins.push(coin);
 
@@ -278,9 +306,9 @@ class GameScene extends Phaser.Scene {
   private updatePusher(delta: number): void {
     const speed = pusherSpeed(this.save.upgrades.pusher) * delta * 0.055;
     const nextY = this.pusher.position.y + speed * this.pusherDirection;
-    if (nextY > 334) this.pusherDirection = -1;
-    if (nextY < 252) this.pusherDirection = 1;
-    const y = Phaser.Math.Clamp(nextY, 252, 334);
+    if (nextY > 346) this.pusherDirection = -1;
+    if (nextY < 266) this.pusherDirection = 1;
+    const y = Phaser.Math.Clamp(nextY, 266, 346);
     this.matter.body.setPosition(this.pusher, { x: WIDTH / 2, y });
     this.pusherVisual.setPosition(WIDTH / 2, y);
   }
@@ -290,9 +318,9 @@ class GameScene extends Phaser.Scene {
       const coin = this.coins[i];
       const { x, y } = coin;
       const autoCollectActive = this.save.buffs.autoCollectUntil > Date.now();
-      if (y < 632 && !(autoCollectActive && y > 560)) continue;
+      if (y < 596 && !(autoCollectActive && y > 540)) continue;
       let reward = Phaser.Math.Between(1, 3);
-      if (x > 158 && x < 272) {
+      if (x > 138 && x < 292) {
         reward += centerReward(this.save.upgrades.slot);
         this.flashTip("图鉴槽命中：获得修复材料");
       }
@@ -300,7 +328,7 @@ class GameScene extends Phaser.Scene {
         reward = Math.ceil(reward * 1.5);
       }
       this.save.gold += reward;
-      this.spawnRewardText(x, Math.min(y, 610), `+${reward}`);
+      this.spawnRewardText(x, Math.min(y, 616), `+${reward}`);
       this.recycleCoin(coin);
       this.coins.splice(i, 1);
     }
@@ -512,7 +540,7 @@ const config: Phaser.Types.Core.GameConfig = {
   physics: {
     default: "matter",
     matter: {
-      gravity: { x: 0, y: 1.1 },
+      gravity: { x: 0, y: 1.5 },
       debug: false,
       enableSleeping: true
     }
