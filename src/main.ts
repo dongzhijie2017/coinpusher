@@ -16,9 +16,8 @@ import {
   tryUpgrade,
   upgrades
 } from "./systems/economy";
-import { mechanismRewards, pickMechanismReward } from "./systems/rewards";
 import { loadSave, saveGame } from "./systems/save";
-import type { MechanismReward, MissionId, PlayerSave, SkinConfig, SkinId, UpgradeId } from "./types";
+import type { GiftTier, MissionId, PlayerSave, SkinConfig, SkinId, UpgradeId } from "./types";
 
 const WIDTH = 430;
 const HEIGHT = 760;
@@ -29,6 +28,35 @@ const CENTER_SLOT_LEFT = 144;
 const CENTER_SLOT_RIGHT = 286;
 const PUSHER_MIN_Y = 432;
 const PUSHER_MAX_Y = 510;
+const FEEDER_LEFT = 132;
+const FEEDER_RIGHT = 298;
+const DUCK_LEFT = 122;
+const DUCK_RIGHT = 308;
+const DUCK_Y = 486;
+const DUCK_HIT_Y = 452;
+const DUCK_SCALE = 0.82;
+const DUCK_HIT_SCALE = 0.98;
+
+type ReelOutcome =
+  | { kind: "gold"; gold: 80 | 100 | 120; label: string; color: number; weight: number }
+  | { kind: "gift"; tier: GiftTier; multiplier: 5 | 10 | 14; label: string; color: number; weight: number };
+
+const GIFT_PACKS: Record<GiftTier, { label: string; multiplier: 5 | 10 | 14; costGold: number; fragments: number; color: number }> = {
+  gift5: { label: "5倍礼盒", multiplier: 5, costGold: 80, fragments: 1, color: 0xf7c04a },
+  gift10: { label: "10倍礼盒", multiplier: 10, costGold: 120, fragments: 2, color: 0xff93c6 },
+  gift14: { label: "14倍礼盒", multiplier: 14, costGold: 180, fragments: 3, color: 0xb6a2ff }
+};
+
+const REEL_OUTCOMES: ReelOutcome[] = [
+  { kind: "gold", gold: 80, label: "80 Gold", color: 0xf7d56b, weight: 34 },
+  { kind: "gold", gold: 120, label: "120 Gold", color: 0xffe08a, weight: 26 },
+  { kind: "gold", gold: 100, label: "100 Gold", color: 0xf7c04a, weight: 30 },
+  { kind: "gift", tier: "gift5", multiplier: 5, label: "5倍礼盒", color: 0xf7c04a, weight: 6 },
+  { kind: "gift", tier: "gift10", multiplier: 10, label: "10倍礼盒", color: 0xff93c6, weight: 3 },
+  { kind: "gift", tier: "gift14", multiplier: 14, label: "14倍礼盒", color: 0xb6a2ff, weight: 1 }
+];
+
+const REEL_SYMBOLS = ["80", "120", "100", "5倍", "10倍", "14倍"];
 
 class GameScene extends Phaser.Scene {
   private save!: PlayerSave;
@@ -36,7 +64,8 @@ class GameScene extends Phaser.Scene {
   private pusher!: MatterJS.BodyType;
   private pusherVisual!: Phaser.GameObjects.Rectangle;
   private pusherShine!: Phaser.GameObjects.Rectangle;
-  private luckySensor!: Phaser.Physics.Matter.Image;
+  private duckSprite!: Phaser.GameObjects.Image;
+  private luckySensorBody!: MatterJS.BodyType;
   private lastDrop = 0;
   private pusherDirection = 1;
   private mechanismBusy = false;
@@ -47,9 +76,16 @@ class GameScene extends Phaser.Scene {
   private goalBar!: Phaser.GameObjects.Rectangle;
   private spawnX = WIDTH / 2;
   private dropGuide!: Phaser.GameObjects.Rectangle;
+  private dropHead!: Phaser.GameObjects.Rectangle;
+  private dropGlow!: Phaser.GameObjects.Arc;
+  private feederX = WIDTH / 2;
+  private feederDirection = 1;
+  private duckX = WIDTH / 2;
+  private duckDirection = 1;
   private panel?: Phaser.GameObjects.Container;
   private autoDropText!: Phaser.GameObjects.Text;
   private autoDropIndicator!: Phaser.GameObjects.Arc;
+  private reelTexts: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super("game");
@@ -109,6 +145,8 @@ class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    this.updateFeeder(delta);
+    this.updateDuck(delta);
     this.updatePusher(delta);
     this.checkDrops();
     this.updateHud();
@@ -207,10 +245,11 @@ class GameScene extends Phaser.Scene {
     this.add.rectangle(WIDTH - 108, 394, 10, 314, 0xffffff, 0.1).setAngle(-12);
 
     this.add.rectangle(WIDTH / 2, 198, 150, 34, 0x0d315f).setStrokeStyle(3, 0xd8e4f2);
-    this.add.rectangle(WIDTH / 2, 198, 100, 16, 0x071932);
-    this.dropGuide = this.add.rectangle(this.spawnX, 220, 34, 5, 0xfff2a8, 0.92);
+    this.dropHead = this.add.rectangle(this.feederX, 198, 58, 18, 0xf8e68d, 0.98).setStrokeStyle(2, 0xffffff).setDepth(8);
+    this.dropGuide = this.add.rectangle(this.feederX, 224, 9, 48, 0xffd84d, 0.96).setStrokeStyle(2, 0xfff2a8).setDepth(8);
+    this.dropGlow = this.add.circle(this.feederX, 248, 7, 0xfff2a8, 0.95).setDepth(9);
+    this.createGoldDeflectors();
 
-    this.add.rectangle(WIDTH / 2, 562, 304, 18, 0xffcf3f).setStrokeStyle(2, 0xfff2a8).setDepth(3);
     this.createStaticCoinBed();
     this.add.rectangle(WIDTH / 2, 600, 150, 58, 0xf7f7f2).setStrokeStyle(3, 0x25344a).setDepth(8);
     this.add.text(WIDTH / 2, 600, "中央修复槽", {
@@ -236,20 +275,38 @@ class GameScene extends Phaser.Scene {
 
     const aimZone = this.add.zone(WIDTH / 2, 198, 286, 90);
     aimZone.setInteractive({ useHandCursor: true });
-    aimZone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      this.spawnX = Phaser.Math.Clamp(pointer.x, 122, 308);
-      this.dropGuide.setX(this.spawnX);
-      this.dropCoin(this.spawnX);
+    aimZone.on("pointerdown", () => {
+      this.dropCoin(this.feederX);
+    });
+  }
+
+  private createGoldDeflectors(): void {
+    [
+      { x: 172, y: 262, angle: -24 },
+      { x: 215, y: 248, angle: 18 },
+      { x: 258, y: 262, angle: -24 }
+    ].forEach((guide) => {
+      this.add.rectangle(guide.x, guide.y, 10, 64, 0xf6d24b)
+        .setStrokeStyle(2, 0xfff2a8)
+        .setAngle(guide.angle)
+        .setDepth(4);
+      this.matter.add.rectangle(guide.x, guide.y, 10, 64, {
+        isStatic: true,
+        angle: Phaser.Math.DegToRad(guide.angle),
+        label: "gold-guide",
+        friction: 0.02,
+        restitution: 0.7
+      });
     });
   }
 
   private createMechanismBoard(): void {
-    this.add.rectangle(WIDTH / 2, 244, 246, 25, 0x7f1725, 0.96).setStrokeStyle(2, 0xffd36e);
+    this.add.rectangle(WIDTH / 2, 244, 246, 25, 0x7f1725, 0.96).setStrokeStyle(2, 0xffd36e).setDepth(5);
     this.add.text(WIDTH / 2, 244, "零件扫描：命中中央槽提升修复效率", {
       color: "#fff1c7",
       fontSize: "11px",
       fontStyle: "700"
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(6);
 
     const columns = [
       { x: 150, values: ["20", "80", "200"] },
@@ -257,25 +314,26 @@ class GameScene extends Phaser.Scene {
       { x: 280, values: ["40", "100", "碎片"] }
     ];
 
+    this.reelTexts = [];
     columns.forEach((column) => {
-      this.add.rectangle(column.x, 352, 56, 142, 0xfff8ed, 0.98).setStrokeStyle(3, 0x7f1725);
+      this.add.rectangle(column.x, 352, 56, 142, 0xfff8ed, 0.98).setStrokeStyle(3, 0x7f1725).setDepth(5);
       column.values.forEach((value, index) => {
         const y = 306 + index * 46;
-        if (index === 1) this.add.rectangle(column.x, y, 52, 38, 0xffdf63, 0.88);
-        this.add.text(column.x, y, value, {
+        if (index === 1) this.add.rectangle(column.x, y, 52, 38, 0xffdf63, 0.88).setDepth(6);
+        const text = this.add.text(column.x, y, value, {
           color: index === 1 ? "#c82131" : "#dc7782",
           fontSize: value.length > 3 ? "15px" : "24px",
           fontStyle: "700"
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(7);
+        if (index === 1) this.reelTexts.push(text);
       });
     });
 
     [126, 174, 224, 274, 324].forEach((x, index) => {
-      this.add.image(x, 274 + (index % 2) * 8, `coin-${this.save.activeSkin}`).setScale(0.23).setAngle(index * 18 - 24);
-      this.add.image(x + 8, 433 - (index % 2) * 7, `coin-${this.save.activeSkin}`).setScale(0.22).setAngle(24 - index * 14);
+      this.add.image(x, 274 + (index % 2) * 8, `coin-${this.save.activeSkin}`).setScale(0.23).setAngle(index * 18 - 24).setDepth(6);
+      this.add.image(x + 8, 433 - (index % 2) * 7, `coin-${this.save.activeSkin}`).setScale(0.22).setAngle(24 - index * 14).setDepth(6);
     });
 
-    this.add.rectangle(WIDTH / 2, 494, 202, 8, 0x271409).setStrokeStyle(2, 0xffe68a);
   }
 
   private createStaticCoinBed(): void {
@@ -290,7 +348,7 @@ class GameScene extends Phaser.Scene {
   }
 
   private createPusher(): void {
-    this.pusherVisual = this.add.rectangle(WIDTH / 2, 462, 286, 42, 0xf6d24b).setStrokeStyle(3, 0xfff2a8).setDepth(6);
+    this.pusherVisual = this.add.rectangle(WIDTH / 2, 462, 286, 42, 0xd8e4f2).setStrokeStyle(3, 0x8aa2bd).setDepth(6);
     this.pusherShine = this.add.rectangle(WIDTH / 2, 450, 260, 8, 0xffffff, 0.35).setDepth(7);
     this.pusher = this.matter.add.rectangle(WIDTH / 2, 462, 304, 62, {
       isStatic: true,
@@ -300,26 +358,19 @@ class GameScene extends Phaser.Scene {
   }
 
   private createLuckySensor(): void {
-    this.add.text(WIDTH / 2, 468, "小黄鸭轨道", {
+    this.add.text(WIDTH / 2, DUCK_Y - 30, "小黄鸭轨道", {
       color: "#fff1c7",
       fontSize: "13px",
       fontStyle: "700"
     }).setOrigin(0.5).setDepth(8);
 
-    this.luckySensor = this.matter.add.image(WIDTH / 2, 494, "lucky-sensor", undefined, {
+    this.duckSprite = this.add.image(WIDTH / 2, DUCK_Y, "lucky-sensor")
+      .setScale(DUCK_SCALE)
+      .setDepth(9);
+    this.luckySensorBody = this.matter.add.circle(WIDTH / 2, DUCK_HIT_Y, 34, {
       isSensor: true,
       isStatic: true,
       label: "lucky-sensor"
-    });
-    this.luckySensor.setScale(0.72);
-    this.luckySensor.setDepth(9);
-
-    this.tweens.add({
-      targets: this.luckySensor,
-      x: { from: 122, to: 308 },
-      duration: 2800,
-      yoyo: true,
-      repeat: -1
     });
   }
 
@@ -340,7 +391,7 @@ class GameScene extends Phaser.Scene {
     }).setOrigin(1, 0.5);
 
     this.add.rectangle(WIDTH / 2, 628, 332, 48, 0x653e29, 0.24).setStrokeStyle(1, 0xffe0a4, 0.32);
-    this.tip = this.add.text(WIDTH / 2, 644, "点击上方发币口可选择落点", {
+    this.tip = this.add.text(WIDTH / 2, 644, "看准顶部摆臂时机，点击推币", {
       color: "#fff5d6",
       fontSize: "12px",
       fontStyle: "700"
@@ -404,7 +455,7 @@ class GameScene extends Phaser.Scene {
     cost.on("pointerdown", drop);
 
     this.autoDropIndicator = this.add.circle(308, 716, 7, this.save.autoDrop ? 0x7cff8b : 0xffffff, this.save.autoDrop ? 0.95 : 0.24);
-    this.createUtilityButton(338, 702, 96, 56, this.save.autoDrop ? "自动开" : "自动关", "按当前落点", () => this.toggleAutoDrop(), (text) => {
+    this.createUtilityButton(338, 702, 96, 56, this.save.autoDrop ? "自动开" : "自动关", "跟随摆臂", () => this.toggleAutoDrop(), (text) => {
       this.autoDropText = text;
     });
 
@@ -486,7 +537,7 @@ class GameScene extends Phaser.Scene {
     });
   }
 
-  private dropCoin(spawnX = this.spawnX): void {
+  private dropCoin(spawnX = this.feederX): void {
     const now = this.time.now;
     const cooldown = coinCooldown(this.save.upgrades.cooldown);
     if (now - this.lastDrop < cooldown) return;
@@ -498,8 +549,11 @@ class GameScene extends Phaser.Scene {
     this.save.coin -= 1;
     increaseMission(this.save, "spawnCoin", 1);
 
-    const x = Phaser.Math.Clamp(spawnX + Phaser.Math.Between(-10, 10), 122, 308);
-    this.createPhysicalCoin(x, 216);
+    const x = Phaser.Math.Clamp(spawnX + Phaser.Math.Between(-6, 6), FEEDER_LEFT, FEEDER_RIGHT);
+    const coin = this.createPhysicalCoin(x, 232);
+    const lateralFromSwing = ((x - WIDTH / 2) / ((FEEDER_RIGHT - FEEDER_LEFT) / 2)) * 0.34;
+    coin.setVelocity(lateralFromSwing + this.feederDirection * 0.22, 0.82);
+    coin.setAngularVelocity(Phaser.Math.FloatBetween(-0.16, 0.16));
   }
 
   private createPhysicalCoin(x: number, y: number): Phaser.Physics.Matter.Image {
@@ -524,6 +578,30 @@ class GameScene extends Phaser.Scene {
       this.recycleCoin(this.coins.shift());
     }
     return coin;
+  }
+
+  private updateFeeder(delta: number): void {
+    const next = this.feederX + this.feederDirection * delta * 0.075;
+    if (next > FEEDER_RIGHT) this.feederDirection = -1;
+    if (next < FEEDER_LEFT) this.feederDirection = 1;
+    this.feederX = Phaser.Math.Clamp(next, FEEDER_LEFT, FEEDER_RIGHT);
+    this.spawnX = this.feederX;
+
+    const offset = (this.feederX - WIDTH / 2) / ((FEEDER_RIGHT - FEEDER_LEFT) / 2);
+    const angle = offset * 17;
+    this.dropHead.setPosition(this.feederX, 198);
+    this.dropGuide.setPosition(this.feederX, 224);
+    this.dropGuide.setAngle(angle);
+    this.dropGlow.setPosition(this.feederX, 248);
+  }
+
+  private updateDuck(delta: number): void {
+    const next = this.duckX + this.duckDirection * delta * 0.06;
+    if (next > DUCK_RIGHT) this.duckDirection = -1;
+    if (next < DUCK_LEFT) this.duckDirection = 1;
+    this.duckX = Phaser.Math.Clamp(next, DUCK_LEFT, DUCK_RIGHT);
+    this.duckSprite.setPosition(this.duckX, DUCK_Y);
+    this.matter.body.setPosition(this.luckySensorBody, { x: this.duckX, y: DUCK_HIT_Y });
   }
 
   private updatePusher(delta: number): void {
@@ -583,126 +661,101 @@ class GameScene extends Phaser.Scene {
   private triggerMechanism(): void {
     this.mechanismBusy = true;
     this.save.mechanismTriggers += 1;
-    const reward = pickMechanismReward();
-    this.showMechanismPanel(reward);
+    this.tweens.add({
+      targets: this.duckSprite,
+      scale: DUCK_HIT_SCALE,
+      duration: 80,
+      yoyo: true
+    });
+    this.rollReels(this.pickReelOutcome());
   }
 
-  private showMechanismPanel(finalReward: MechanismReward): void {
-    const overlay = this.add.container(WIDTH / 2, HEIGHT / 2);
-    overlay.setDepth(20);
+  private pickReelOutcome(random = Math.random()): ReelOutcome {
+    const total = REEL_OUTCOMES.reduce((sum, item) => sum + item.weight, 0);
+    let cursor = random * total;
+    for (const outcome of REEL_OUTCOMES) {
+      cursor -= outcome.weight;
+      if (cursor <= 0) return outcome;
+    }
+    return REEL_OUTCOMES[0];
+  }
 
-    const shade = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0x05070d, 0.58);
-    const panel = this.add.rectangle(0, -8, 354, 330, 0x14213d, 0.96).setStrokeStyle(3, 0x70d6ff);
-    const title = this.add.text(0, -145, "机关检索", {
-      color: "#fff7d1",
-      fontSize: "24px",
-      fontStyle: "700"
-    }).setOrigin(0.5);
-    const subtitle = this.add.text(0, -116, "扫描硬轨迹，发现可用零件", {
-      color: "#9fb7ff",
-      fontSize: "13px"
-    }).setOrigin(0.5);
+  private rollReels(outcome: ReelOutcome): void {
+    const finalSymbol = this.reelSymbolForOutcome(outcome);
+    this.flashTip("小黄鸭命中：中屏开始滚动");
 
-    overlay.add([shade, panel, title, subtitle]);
-
-    const cells: Phaser.GameObjects.Rectangle[] = [];
-    const labels: Phaser.GameObjects.Text[] = [];
-    mechanismRewards.slice(0, 9).forEach((reward, index) => {
-      const col = index % 3;
-      const row = Math.floor(index / 3);
-      const x = -108 + col * 108;
-      const y = -54 + row * 70;
-      const cell = this.add.rectangle(x, y, 92, 54, 0x22365f).setStrokeStyle(2, 0x4a78c2);
-      const label = this.add.text(x, y, reward.shortLabel, {
-        color: "#ffffff",
-        fontSize: "16px",
-        fontStyle: "700"
-      }).setOrigin(0.5);
-      overlay.add([cell, label]);
-      cells.push(cell);
-      labels.push(label);
-    });
-
-    const resultText = this.add.text(0, 132, "", {
-      color: "#fff0a6",
-      fontSize: "15px",
-      align: "center",
-      wordWrap: { width: 310 }
-    }).setOrigin(0.5);
-    overlay.add(resultText);
-
-    let tick = 0;
-    const visibleRewards = mechanismRewards.slice(0, 9);
-    const finalIndex = Math.max(0, visibleRewards.findIndex((reward) => reward.id === finalReward.id));
-    this.time.addEvent({
-      delay: 80,
-      repeat: 20,
-      callback: () => {
-        cells.forEach((cell, index) => {
-          const selected = index === tick % cells.length;
-          cell.setFillStyle(selected ? 0xf2b84b : 0x22365f);
-          labels[index].setColor(selected ? "#2b1b04" : "#ffffff");
-        });
-        tick += 1;
-      }
-    });
-
-    this.time.delayedCall(1900, () => {
-      cells.forEach((cell, index) => {
-        const selected = index === finalIndex;
-        cell.setFillStyle(selected ? finalReward.color : 0x22365f);
-        labels[index].setColor(selected ? "#10131f" : "#ffffff");
+    this.reelTexts.forEach((text, column) => {
+      this.time.addEvent({
+        delay: 70 + column * 15,
+        repeat: 14 + column * 4,
+        callback: () => {
+          text.setText(REEL_SYMBOLS[Phaser.Math.Between(0, REEL_SYMBOLS.length - 1)]);
+          text.setColor("#fff1c7");
+          this.tweens.add({
+            targets: text,
+            scale: 1.16,
+            duration: 45,
+            yoyo: true
+          });
+        }
       });
-      resultText.setText(finalReward.description);
-      this.applyMechanismReward(finalReward);
-      this.persist();
+
+      this.time.delayedCall(1220 + column * 280, () => {
+        text.setText(finalSymbol);
+        text.setColor(outcome.kind === "gold" ? "#c82131" : "#7c2d12");
+      });
     });
 
-    this.time.delayedCall(3300, () => {
-      overlay.destroy();
+    this.time.delayedCall(2250, () => {
+      this.applyReelOutcome(outcome);
+      this.persist();
       this.mechanismBusy = false;
     });
   }
 
-  private applyMechanismReward(reward: MechanismReward): void {
-    const now = Date.now();
-    switch (reward.id) {
-      case "gold-small":
-        this.save.gold += 5;
-        this.spawnRewardText(WIDTH / 2, 235, "+5G");
-        break;
-      case "gold-medium":
-        this.save.gold += 10;
-        this.spawnRewardText(WIDTH / 2, 235, "+10G");
-        break;
-      case "gold-large":
-        this.save.gold += 30;
-        this.spawnRewardText(WIDTH / 2, 235, "+30G");
-        break;
-      case "coin":
-        this.save.coin = Math.min(SUPPLY_COIN_CAP, this.save.coin + 1);
-        this.spawnRewardText(WIDTH / 2, 235, "+1C");
-        break;
-      case "gold-boost":
-        this.save.buffs.goldBoostUntil = Math.max(this.save.buffs.goldBoostUntil, now) + 5 * 60 * 1000;
-        break;
-      case "auto-collect":
-        this.save.buffs.autoCollectUntil = Math.max(this.save.buffs.autoCollectUntil, now) + 30 * 1000;
-        break;
-      case "fragment":
-        this.save.fragments += 1;
-        this.spawnRewardText(WIDTH / 2, 235, "+碎片");
-        break;
-      case "upgrade-discount":
-        this.save.buffs.upgradeDiscountUntil = Math.max(this.save.buffs.upgradeDiscountUntil, now) + 5 * 60 * 1000;
-        break;
-      case "skin-discount":
-        this.save.buffs.skinDiscountUntil = Math.max(this.save.buffs.skinDiscountUntil, now) + 10 * 60 * 1000;
-        break;
-      case "blank":
-        break;
+  private reelSymbolForOutcome(outcome: ReelOutcome): string {
+    return outcome.kind === "gold" ? `${outcome.gold}` : `${outcome.multiplier}倍`;
+  }
+
+  private applyReelOutcome(outcome: ReelOutcome): void {
+    if (outcome.kind === "gold") {
+      this.save.gold += outcome.gold;
+      increaseMission(this.save, "earnGold", outcome.gold);
+      this.spawnRewardText(WIDTH / 2, 350, `+${outcome.gold}G`);
+      this.flashTip(`三列 ${outcome.gold} 对齐：Gold +${outcome.gold}`);
+      return;
     }
-    this.flashTip(`机关检索：${reward.description}`);
+
+    this.save.giftPacks[outcome.tier] += 1;
+    this.spawnGiftPackDrop(outcome.tier);
+    this.flashTip(`${GIFT_PACKS[outcome.tier].label} 掉落：到图鉴用 Gold 拼图`);
+  }
+
+  private spawnGiftPackDrop(tier: GiftTier): void {
+    const pack = GIFT_PACKS[tier];
+    const box = this.add.rectangle(WIDTH / 2, 258, 46, 38, pack.color).setStrokeStyle(3, 0xfff2a8).setDepth(12);
+    const ribbonV = this.add.rectangle(WIDTH / 2, 258, 9, 38, 0xffffff, 0.72).setDepth(13);
+    const ribbonH = this.add.rectangle(WIDTH / 2, 258, 46, 8, 0xffffff, 0.72).setDepth(13);
+    const label = this.add.text(WIDTH / 2, 258, `${pack.multiplier}x`, {
+      color: "#7c2d12",
+      fontSize: "13px",
+      fontStyle: "700"
+    }).setOrigin(0.5).setDepth(14);
+
+    this.tweens.add({
+      targets: [box, ribbonV, ribbonH, label],
+      y: 546,
+      duration: 620,
+      ease: "Bounce.easeOut",
+      onComplete: () => {
+        this.time.delayedCall(650, () => {
+          box.destroy();
+          ribbonV.destroy();
+          ribbonH.destroy();
+          label.destroy();
+        });
+      }
+    });
   }
 
   private activeBuffLines(now: number): string[] {
@@ -726,7 +779,17 @@ class GameScene extends Phaser.Scene {
       const unlocked = this.save.repairedCount > index;
       return `${unlocked ? "已修复" : "待修复"}  ${goal.label}  需要 ${goal.costGold} Gold`;
     });
-    const actions = this.save.repairedCount < arcadeGoals.length ? [{ label: "修复当前", action: () => this.repairCurrentArcade() }] : [];
+    rows.push(`拼图碎片 ${this.save.fragments}  礼盒 ${this.save.giftPacks.gift5}/${this.save.giftPacks.gift10}/${this.save.giftPacks.gift14}`);
+    rows.push(`5倍礼盒 ${GIFT_PACKS.gift5.costGold}G 开启，补 ${GIFT_PACKS.gift5.fragments} 块拼图`);
+    rows.push(`10倍礼盒 ${GIFT_PACKS.gift10.costGold}G 开启，补 ${GIFT_PACKS.gift10.fragments} 块拼图`);
+    rows.push(`14倍礼盒 ${GIFT_PACKS.gift14.costGold}G 开启，补 ${GIFT_PACKS.gift14.fragments} 块拼图`);
+
+    const actions = [
+      ...(this.save.repairedCount < arcadeGoals.length ? [{ label: "修复当前", action: () => this.repairCurrentArcade() }] : []),
+      { label: "开5倍", action: () => this.openGiftPack("gift5") },
+      { label: "开10倍", action: () => this.openGiftPack("gift10") },
+      { label: "开14倍", action: () => this.openGiftPack("gift14") }
+    ];
     this.showInfoPanel("修复图鉴", rows, actions);
   }
 
@@ -799,16 +862,35 @@ class GameScene extends Phaser.Scene {
     this.showInfoPanel(
       "规则说明",
       [
-        "1. 点击发币口选择落点，再点击底部按钮投币",
-        "2. 左右回收槽给基础 Gold，中央修复槽给更高 Gold",
-        "3. 小黄鸭只会触发免费机关检索，不售卖次数",
-        "4. 机关检索产出游戏内成长道具，不展示概率营销",
-        "5. Gold 用于机器升级和街机修复图鉴",
-        "6. Gem 来自每日任务，只用于硬币外观",
+        "1. 顶部摆臂持续左右移动，点击推币按当前角度出币",
+        "2. 金币碰到中间金色导向柱会改变下落方向",
+        "3. 玩家投下的新币砸中鸭子头部触发三列滚动",
+        "4. 三列同为 80/120/100 时获得对应 Gold",
+        "5. 三列出现礼盒时掉落 5/10/14 倍礼盒包",
+        "6. 礼盒在图鉴中用 Gold 开启，补全拼图碎片",
         "7. 无现金、实物、提现、交易或返利奖励"
       ],
       []
     );
+  }
+
+  private openGiftPack(tier: GiftTier): void {
+    const pack = GIFT_PACKS[tier];
+    if (this.save.giftPacks[tier] <= 0) {
+      this.flashTip(`${pack.label} 数量不足，先砸中小黄鸭获取`);
+      return;
+    }
+    if (this.save.gold < pack.costGold) {
+      this.flashTip(`Gold 不足：开启${pack.label}需要 ${pack.costGold}G`);
+      return;
+    }
+
+    this.save.giftPacks[tier] -= 1;
+    this.save.gold -= pack.costGold;
+    this.save.fragments += pack.fragments;
+    this.flashTip(`${pack.label} 已开启：拼图 +${pack.fragments}`);
+    this.persist();
+    this.showGalleryPanel();
   }
 
   private claimSupply(amount: number): void {

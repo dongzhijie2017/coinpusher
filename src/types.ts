@@ -1,18 +1,7 @@
 export type UpgradeId = "cooldown" | "pusher" | "slot";
 export type MissionId = "spawnCoin" | "hitCenter" | "earnGold";
 export type SkinId = "classic" | "silver" | "ruby" | "emerald";
-
-export type RewardId =
-  | "gold-small"
-  | "gold-medium"
-  | "gold-large"
-  | "coin"
-  | "gold-boost"
-  | "auto-collect"
-  | "fragment"
-  | "upgrade-discount"
-  | "skin-discount"
-  | "blank";
+export type GiftTier = "gift5" | "gift10" | "gift14";
 
 export interface PlayerSave {
   coin: number;
@@ -22,6 +11,7 @@ export interface PlayerSave {
   mechanismTriggers: number;
   repairedCount: number;
   autoDrop: boolean;
+  giftPacks: Record<GiftTier, number>;
   activeSkin: SkinId;
   unlockedSkins: SkinId[];
   missions: Record<MissionId, MissionProgress>;
@@ -42,15 +32,6 @@ export interface UpgradeConfig {
   baseCost: number;
   growth: number;
   maxLevel: number;
-}
-
-export interface MechanismReward {
-  id: RewardId;
-  label: string;
-  shortLabel: string;
-  description: string;
-  weight: number;
-  color: number;
 }
 
 export interface MissionProgress {

@@ -10,6 +10,11 @@ export const defaultSave = (): PlayerSave => ({
   mechanismTriggers: 0,
   repairedCount: 0,
   autoDrop: false,
+  giftPacks: {
+    gift5: 0,
+    gift10: 0,
+    gift14: 0
+  },
   activeSkin: "classic",
   unlockedSkins: ["classic"],
   missions: {
@@ -46,6 +51,10 @@ export function loadSave(): PlayerSave {
       missions: {
         ...defaultSave().missions,
         ...parsed.missions
+      },
+      giftPacks: {
+        ...defaultSave().giftPacks,
+        ...parsed.giftPacks
       },
       unlockedSkins: parsed.unlockedSkins?.length ? parsed.unlockedSkins : defaultSave().unlockedSkins,
       upgrades: {
