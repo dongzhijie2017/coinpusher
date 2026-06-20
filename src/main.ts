@@ -21,13 +21,13 @@ import type { GiftTier, MissionId, PlayerSave, SkinConfig, SkinId, UpgradeId } f
 
 const WIDTH = 430;
 const HEIGHT = 760;
-const MAX_COINS = 140;
+const MAX_COINS = 96;
 const NATURAL_COIN_CAP = 50;
 const SUPPLY_COIN_CAP = 80;
 const CENTER_SLOT_LEFT = 144;
 const CENTER_SLOT_RIGHT = 286;
-const PUSHER_MIN_Y = 432;
-const PUSHER_MAX_Y = 510;
+const PUSHER_MIN_Y = 524;
+const PUSHER_MAX_Y = 570;
 const FEEDER_LEFT = 132;
 const FEEDER_RIGHT = 298;
 const DUCK_LEFT = 122;
@@ -36,6 +36,8 @@ const DUCK_Y = 486;
 const DUCK_HIT_Y = 452;
 const DUCK_SCALE = 0.82;
 const DUCK_HIT_SCALE = 0.98;
+const COIN_BODY_RADIUS = 14;
+const COIN_DISPLAY_SCALE = 0.46;
 
 type ReelOutcome =
   | { kind: "gold"; gold: 80 | 100 | 120; label: string; color: number; weight: number }
@@ -337,20 +339,20 @@ class GameScene extends Phaser.Scene {
   }
 
   private createStaticCoinBed(): void {
-    for (let i = 0; i < 34; i += 1) {
-      const x = 90 + (i % 17) * 15 + Phaser.Math.Between(-4, 4);
-      const y = 548 + Math.floor(i / 17) * 17 + Phaser.Math.Between(-3, 4);
+    for (let i = 0; i < 24; i += 1) {
+      const x = 102 + (i % 12) * 18 + Phaser.Math.Between(-3, 3);
+      const y = 546 + Math.floor(i / 12) * 16 + Phaser.Math.Between(-2, 3);
       this.add.image(x, y, `coin-${this.save.activeSkin}`)
-        .setScale(0.34 + (i % 3) * 0.025)
+        .setScale(0.26 + (i % 3) * 0.018)
         .setAngle(Phaser.Math.Between(-28, 28))
         .setDepth(2);
     }
   }
 
   private createPusher(): void {
-    this.pusherVisual = this.add.rectangle(WIDTH / 2, 462, 286, 42, 0xd8e4f2).setStrokeStyle(3, 0x8aa2bd).setDepth(6);
-    this.pusherShine = this.add.rectangle(WIDTH / 2, 450, 260, 8, 0xffffff, 0.35).setDepth(7);
-    this.pusher = this.matter.add.rectangle(WIDTH / 2, 462, 304, 62, {
+    this.pusherVisual = this.add.rectangle(WIDTH / 2, 538, 286, 36, 0xd8e4f2).setStrokeStyle(3, 0x8aa2bd).setDepth(6);
+    this.pusherShine = this.add.rectangle(WIDTH / 2, 528, 260, 7, 0xffffff, 0.35).setDepth(7);
+    this.pusher = this.matter.add.rectangle(WIDTH / 2, 538, 304, 48, {
       isStatic: true,
       label: "pusher",
       friction: 0.18
@@ -510,10 +512,10 @@ class GameScene extends Phaser.Scene {
   }
 
   private seedCoinPile(): void {
-    const count = Math.min(64, 34 + this.save.upgrades.slot * 3);
+    const count = Math.min(38, 22 + this.save.upgrades.slot * 2);
     for (let i = 0; i < count; i += 1) {
       const x = Phaser.Math.Between(112, 318);
-      const y = Phaser.Math.Between(506, 575);
+      const y = Phaser.Math.Between(552, 592);
       const coin = this.createPhysicalCoin(x, y);
       coin.setData("seeded", true);
     }
@@ -558,7 +560,7 @@ class GameScene extends Phaser.Scene {
 
   private createPhysicalCoin(x: number, y: number): Phaser.Physics.Matter.Image {
     const coin = this.matter.add.image(x, y, `coin-${this.save.activeSkin}`, undefined, {
-      shape: { type: "circle", radius: 21 },
+      shape: { type: "circle", radius: COIN_BODY_RADIUS },
       restitution: 0.05,
       friction: 0.14,
       frictionAir: 0.03,
@@ -566,12 +568,13 @@ class GameScene extends Phaser.Scene {
       slop: 0.02,
       label: "coin"
     });
-    coin.setScale(0.68);
+    coin.setScale(COIN_DISPLAY_SCALE);
     coin.setDepth(5);
     coin.setBounce(0.05);
     coin.setFriction(0.15, 0.03, 0.15);
     coin.setVelocity(0, 0.58);
     coin.setAngularVelocity(Phaser.Math.FloatBetween(-0.08, 0.08));
+    coin.setData("spawnedAt", this.time.now);
     this.coins.push(coin);
 
     if (this.coins.length > MAX_COINS) {
@@ -619,6 +622,10 @@ class GameScene extends Phaser.Scene {
     for (let i = this.coins.length - 1; i >= 0; i -= 1) {
       const coin = this.coins[i];
       const { x, y } = coin;
+      const age = this.time.now - ((coin.getData("spawnedAt") as number | undefined) ?? this.time.now);
+      if (coin.body && age > 4500 && y < 520 && coin.body.velocity.y < 0.5) {
+        coin.setVelocity(coin.body.velocity.x * 0.75, 1.1);
+      }
       const autoCollectActive = this.save.buffs.autoCollectUntil > Date.now();
       if (y < 608 && !(autoCollectActive && y > 560)) continue;
       let reward = Phaser.Math.Between(1, 3);
