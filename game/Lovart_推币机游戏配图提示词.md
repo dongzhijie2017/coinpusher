@@ -46,6 +46,14 @@ https://www.lovart.ai/canvas?projectId=9885b2788f584ddcb40632767d879639
 unlimited
 ```
 
+已生成资产：
+
+| 文件 | 用途 | 备注 |
+| --- | --- | --- |
+| `coin-pusher-hero.png` | 宣传主视觉 | 正面展示图，不作为玩法结构锚点 |
+| `coin-pusher-gameplay-reference.jpeg` | 玩法结构参考 | 斜俯视、矩形推板、前方掉落槽，可用于指导实现 |
+| `coin-pusher-gameplay-draft-text-noise.jpeg` | 废稿留档 | 有文字噪声和滚筒结构，不建议用于实现 |
+
 ## 1. 主视觉 Hero
 
 文件建议命名：
