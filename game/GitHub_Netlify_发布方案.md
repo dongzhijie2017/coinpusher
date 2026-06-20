@@ -59,18 +59,21 @@ netlify.toml
 
 ## GitHub 推送步骤
 
-如果还没有 GitHub 仓库：
+当前本地仓库已经初始化：
+
+```text
+branch: main
+commit: 052be5c Initial coin pusher MVP
+```
+
+下一步只需要创建 GitHub 远程仓库，然后执行：
 
 ```bash
-git init
-git add .
-git commit -m "Initial coin pusher MVP"
-git branch -M main
 git remote add origin <你的 GitHub 仓库地址>
 git push -u origin main
 ```
 
-如果已经创建远程仓库，只需要替换 `<你的 GitHub 仓库地址>`。
+如果远程仓库已经存在，只需要替换 `<你的 GitHub 仓库地址>`。
 
 ## Netlify 操作步骤
 
