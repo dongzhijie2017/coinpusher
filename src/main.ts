@@ -1,8 +1,9 @@
 import Phaser from "phaser";
 import "./style.css";
-import { centerReward, coinCooldown, pusherSpeed, tryUpgrade, upgradeCost, upgrades } from "./systems/economy";
+import { centerReward, coinCooldown, effectiveUpgradeCost, pusherSpeed, tryUpgrade, upgrades } from "./systems/economy";
+import { mechanismRewards, pickMechanismReward } from "./systems/rewards";
 import { loadSave, saveGame } from "./systems/save";
-import type { PlayerSave, UpgradeId } from "./types";
+import type { MechanismReward, PlayerSave, UpgradeId } from "./types";
 
 const WIDTH = 430;
 const HEIGHT = 760;
@@ -13,11 +14,14 @@ class GameScene extends Phaser.Scene {
   private coins: Phaser.Physics.Matter.Image[] = [];
   private pusher!: MatterJS.BodyType;
   private pusherVisual!: Phaser.GameObjects.Rectangle;
+  private luckySensor!: Phaser.Physics.Matter.Image;
   private lastDrop = 0;
   private pusherDirection = 1;
+  private mechanismBusy = false;
   private hud!: Phaser.GameObjects.Text;
   private tip!: Phaser.GameObjects.Text;
   private upgradeTexts: Partial<Record<UpgradeId, Phaser.GameObjects.Text>> = {};
+  private buffText!: Phaser.GameObjects.Text;
 
   constructor() {
     super("game");
@@ -38,9 +42,11 @@ class GameScene extends Phaser.Scene {
     this.createBackdrop();
     this.createMachine();
     this.createPusher();
+    this.createLuckySensor();
     this.createHud();
     this.createControls();
     this.createUpgradePanel();
+    this.createCollisionHandlers();
 
     this.time.addEvent({
       delay: 60000,
@@ -76,6 +82,18 @@ class GameScene extends Phaser.Scene {
     coin.fillCircle(23, 22, 7);
     coin.generateTexture("coin", 64, 64);
     coin.destroy();
+
+    const sensor = this.add.graphics();
+    sensor.fillStyle(0xffd34f, 1);
+    sensor.fillCircle(32, 32, 27);
+    sensor.fillStyle(0xfff7b0, 1);
+    sensor.fillEllipse(28, 26, 28, 18);
+    sensor.fillStyle(0xf08f2d, 1);
+    sensor.fillTriangle(48, 28, 62, 34, 48, 40);
+    sensor.fillStyle(0x1e2a3c, 1);
+    sensor.fillCircle(23, 24, 3);
+    sensor.generateTexture("lucky-sensor", 64, 64);
+    sensor.destroy();
   }
 
   private createBackdrop(): void {
@@ -120,6 +138,29 @@ class GameScene extends Phaser.Scene {
     });
   }
 
+  private createLuckySensor(): void {
+    this.add.text(WIDTH / 2, 187, "机关检索", {
+      color: "#d8f7ff",
+      fontSize: "13px",
+      fontStyle: "700"
+    }).setOrigin(0.5);
+
+    this.luckySensor = this.matter.add.image(WIDTH / 2, 218, "lucky-sensor", undefined, {
+      isSensor: true,
+      isStatic: true,
+      label: "lucky-sensor"
+    });
+    this.luckySensor.setScale(0.72);
+
+    this.tweens.add({
+      targets: this.luckySensor,
+      x: { from: 102, to: 328 },
+      duration: 2800,
+      yoyo: true,
+      repeat: -1
+    });
+  }
+
   private createHud(): void {
     this.hud = this.add.text(24, 108, "", {
       color: "#ffffff",
@@ -131,6 +172,13 @@ class GameScene extends Phaser.Scene {
       color: "#fff0a6",
       fontSize: "14px"
     }).setOrigin(0.5);
+
+    this.buffText = this.add.text(WIDTH - 24, 108, "", {
+      color: "#aef27a",
+      fontSize: "12px",
+      align: "right",
+      lineSpacing: 5
+    }).setOrigin(1, 0);
   }
 
   private createControls(): void {
@@ -175,6 +223,23 @@ class GameScene extends Phaser.Scene {
       text.setInteractive({ useHandCursor: true });
       text.on("pointerdown", () => this.buyUpgrade(upgrade.id));
       this.upgradeTexts[upgrade.id] = text;
+    });
+  }
+
+  private createCollisionHandlers(): void {
+    this.matter.world.on("collisionstart", (event: Phaser.Physics.Matter.Events.CollisionStartEvent) => {
+      event.pairs.forEach((pair) => {
+        const bodies = [pair.bodyA, pair.bodyB];
+        const sensorBody = bodies.find((body) => body.label === "lucky-sensor");
+        const coinBody = bodies.find((body) => body.label === "coin");
+        if (!sensorBody || !coinBody) return;
+        const coin = this.coins.find((item) => item.body === coinBody);
+        if (!coin) return;
+        const data = coin.getData("mechanismTriggered") as boolean | undefined;
+        if (data || this.mechanismBusy) return;
+        coin.setData("mechanismTriggered", true);
+        this.triggerMechanism();
+      });
     });
   }
 
@@ -224,14 +289,18 @@ class GameScene extends Phaser.Scene {
     for (let i = this.coins.length - 1; i >= 0; i -= 1) {
       const coin = this.coins[i];
       const { x, y } = coin;
-      if (y < 632) continue;
+      const autoCollectActive = this.save.buffs.autoCollectUntil > Date.now();
+      if (y < 632 && !(autoCollectActive && y > 560)) continue;
       let reward = Phaser.Math.Between(1, 3);
       if (x > 158 && x < 272) {
         reward += centerReward(this.save.upgrades.slot);
         this.flashTip("图鉴槽命中：获得修复材料");
       }
+      if (this.save.buffs.goldBoostUntil > Date.now()) {
+        reward = Math.ceil(reward * 1.5);
+      }
       this.save.gold += reward;
-      this.spawnRewardText(x, 610, `+${reward}`);
+      this.spawnRewardText(x, Math.min(y, 610), `+${reward}`);
       this.recycleCoin(coin);
       this.coins.splice(i, 1);
     }
@@ -247,12 +316,155 @@ class GameScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
-    this.hud.setText(`Coin ${this.save.coin}/50\nGold ${this.save.gold}\n硬币 ${this.coins.length}/${MAX_COINS}`);
+    const now = Date.now();
+    this.hud.setText(`Coin ${this.save.coin}/50\nGold ${this.save.gold}\n碎片 ${this.save.fragments}\n机关 ${this.save.mechanismTriggers}`);
+    this.buffText.setText(this.activeBuffLines(now).join("\n"));
     upgrades.forEach((upgrade) => {
       const level = this.save.upgrades[upgrade.id];
-      const cost = upgradeCost(upgrade, level);
+      const cost = effectiveUpgradeCost(this.save, upgrade, now);
       this.upgradeTexts[upgrade.id]?.setText(`${upgrade.label} Lv.${level}  ${level >= upgrade.maxLevel ? "MAX" : `${cost}G`}`);
     });
+  }
+
+  private triggerMechanism(): void {
+    this.mechanismBusy = true;
+    this.save.mechanismTriggers += 1;
+    const reward = pickMechanismReward();
+    this.showMechanismPanel(reward);
+  }
+
+  private showMechanismPanel(finalReward: MechanismReward): void {
+    const overlay = this.add.container(WIDTH / 2, HEIGHT / 2);
+    overlay.setDepth(20);
+
+    const shade = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0x05070d, 0.58);
+    const panel = this.add.rectangle(0, -8, 354, 330, 0x14213d, 0.96).setStrokeStyle(3, 0x70d6ff);
+    const title = this.add.text(0, -145, "机关检索", {
+      color: "#fff7d1",
+      fontSize: "24px",
+      fontStyle: "700"
+    }).setOrigin(0.5);
+    const subtitle = this.add.text(0, -116, "扫描硬轨迹，发现可用零件", {
+      color: "#9fb7ff",
+      fontSize: "13px"
+    }).setOrigin(0.5);
+
+    overlay.add([shade, panel, title, subtitle]);
+
+    const cells: Phaser.GameObjects.Rectangle[] = [];
+    const labels: Phaser.GameObjects.Text[] = [];
+    mechanismRewards.slice(0, 9).forEach((reward, index) => {
+      const col = index % 3;
+      const row = Math.floor(index / 3);
+      const x = -108 + col * 108;
+      const y = -54 + row * 70;
+      const cell = this.add.rectangle(x, y, 92, 54, 0x22365f).setStrokeStyle(2, 0x4a78c2);
+      const label = this.add.text(x, y, reward.shortLabel, {
+        color: "#ffffff",
+        fontSize: "16px",
+        fontStyle: "700"
+      }).setOrigin(0.5);
+      overlay.add([cell, label]);
+      cells.push(cell);
+      labels.push(label);
+    });
+
+    const resultText = this.add.text(0, 132, "", {
+      color: "#fff0a6",
+      fontSize: "15px",
+      align: "center",
+      wordWrap: { width: 310 }
+    }).setOrigin(0.5);
+    overlay.add(resultText);
+
+    let tick = 0;
+    const visibleRewards = mechanismRewards.slice(0, 9);
+    const finalIndex = Math.max(0, visibleRewards.findIndex((reward) => reward.id === finalReward.id));
+    this.time.addEvent({
+      delay: 80,
+      repeat: 20,
+      callback: () => {
+        cells.forEach((cell, index) => {
+          const selected = index === tick % cells.length;
+          cell.setFillStyle(selected ? 0xf2b84b : 0x22365f);
+          labels[index].setColor(selected ? "#2b1b04" : "#ffffff");
+        });
+        tick += 1;
+      }
+    });
+
+    this.time.delayedCall(1900, () => {
+      cells.forEach((cell, index) => {
+        const selected = index === finalIndex;
+        cell.setFillStyle(selected ? finalReward.color : 0x22365f);
+        labels[index].setColor(selected ? "#10131f" : "#ffffff");
+      });
+      resultText.setText(finalReward.description);
+      this.applyMechanismReward(finalReward);
+      this.persist();
+    });
+
+    this.time.delayedCall(3300, () => {
+      overlay.destroy();
+      this.mechanismBusy = false;
+    });
+  }
+
+  private applyMechanismReward(reward: MechanismReward): void {
+    const now = Date.now();
+    switch (reward.id) {
+      case "gold-small":
+        this.save.gold += 5;
+        this.spawnRewardText(WIDTH / 2, 235, "+5G");
+        break;
+      case "gold-medium":
+        this.save.gold += 10;
+        this.spawnRewardText(WIDTH / 2, 235, "+10G");
+        break;
+      case "gold-large":
+        this.save.gold += 30;
+        this.spawnRewardText(WIDTH / 2, 235, "+30G");
+        break;
+      case "coin":
+        this.save.coin = Math.min(80, this.save.coin + 1);
+        this.spawnRewardText(WIDTH / 2, 235, "+1C");
+        break;
+      case "gold-boost":
+        this.save.buffs.goldBoostUntil = Math.max(this.save.buffs.goldBoostUntil, now) + 5 * 60 * 1000;
+        break;
+      case "auto-collect":
+        this.save.buffs.autoCollectUntil = Math.max(this.save.buffs.autoCollectUntil, now) + 30 * 1000;
+        break;
+      case "fragment":
+        this.save.fragments += 1;
+        this.spawnRewardText(WIDTH / 2, 235, "+碎片");
+        break;
+      case "upgrade-discount":
+        this.save.buffs.upgradeDiscountUntil = Math.max(this.save.buffs.upgradeDiscountUntil, now) + 5 * 60 * 1000;
+        break;
+      case "skin-discount":
+        this.save.buffs.skinDiscountUntil = Math.max(this.save.buffs.skinDiscountUntil, now) + 10 * 60 * 1000;
+        break;
+      case "blank":
+        break;
+    }
+    this.flashTip(`机关检索：${reward.description}`);
+  }
+
+  private activeBuffLines(now: number): string[] {
+    const lines: string[] = [];
+    if (this.save.buffs.goldBoostUntil > now) lines.push(`Gold +50% ${this.formatRemain(this.save.buffs.goldBoostUntil - now)}`);
+    if (this.save.buffs.autoCollectUntil > now) lines.push(`自动收集 ${this.formatRemain(this.save.buffs.autoCollectUntil - now)}`);
+    if (this.save.buffs.upgradeDiscountUntil > now) lines.push(`升级 9折 ${this.formatRemain(this.save.buffs.upgradeDiscountUntil - now)}`);
+    if (this.save.buffs.skinDiscountUntil > now) lines.push(`皮肤券 ${this.formatRemain(this.save.buffs.skinDiscountUntil - now)}`);
+    return lines;
+  }
+
+  private formatRemain(ms: number): string {
+    const seconds = Math.max(0, Math.ceil(ms / 1000));
+    const minutes = Math.floor(seconds / 60);
+    const rest = seconds % 60;
+    return `${minutes}:${rest.toString().padStart(2, "0")}`;
   }
 
   private spawnRewardText(x: number, y: number, text: string): void {

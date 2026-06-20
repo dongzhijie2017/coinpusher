@@ -5,6 +5,14 @@ const KEY = "coin-pusher-save-v1";
 export const defaultSave = (): PlayerSave => ({
   coin: 50,
   gold: 0,
+  fragments: 0,
+  mechanismTriggers: 0,
+  buffs: {
+    goldBoostUntil: 0,
+    autoCollectUntil: 0,
+    upgradeDiscountUntil: 0,
+    skinDiscountUntil: 0
+  },
   upgrades: {
     cooldown: 1,
     pusher: 1,
@@ -21,6 +29,10 @@ export function loadSave(): PlayerSave {
     return {
       ...defaultSave(),
       ...parsed,
+      buffs: {
+        ...defaultSave().buffs,
+        ...parsed.buffs
+      },
       upgrades: {
         ...defaultSave().upgrades,
         ...parsed.upgrades
