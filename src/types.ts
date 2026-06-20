@@ -1,4 +1,6 @@
 export type UpgradeId = "cooldown" | "pusher" | "slot";
+export type MissionId = "spawnCoin" | "hitCenter" | "earnGold";
+export type SkinId = "classic" | "silver" | "ruby" | "emerald";
 
 export type RewardId =
   | "gold-small"
@@ -15,8 +17,13 @@ export type RewardId =
 export interface PlayerSave {
   coin: number;
   gold: number;
+  gem: number;
   fragments: number;
   mechanismTriggers: number;
+  repairedCount: number;
+  activeSkin: SkinId;
+  unlockedSkins: SkinId[];
+  missions: Record<MissionId, MissionProgress>;
   buffs: {
     goldBoostUntil: number;
     autoCollectUntil: number;
@@ -42,5 +49,38 @@ export interface MechanismReward {
   shortLabel: string;
   description: string;
   weight: number;
+  color: number;
+}
+
+export interface MissionProgress {
+  progress: number;
+  claimed: boolean;
+}
+
+export interface MissionConfig {
+  id: MissionId;
+  label: string;
+  target: number;
+  rewardGem: number;
+}
+
+export interface SkinConfig {
+  id: SkinId;
+  label: string;
+  costGem: number;
+  colors: {
+    outer: number;
+    middle: number;
+    inner: number;
+    shine: number;
+    rim: number;
+  };
+}
+
+export interface ArcadeGoal {
+  id: string;
+  label: string;
+  costGold: number;
+  description: string;
   color: number;
 }

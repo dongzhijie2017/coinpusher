@@ -5,8 +5,17 @@ const KEY = "coin-pusher-save-v1";
 export const defaultSave = (): PlayerSave => ({
   coin: 50,
   gold: 0,
+  gem: 10,
   fragments: 0,
   mechanismTriggers: 0,
+  repairedCount: 0,
+  activeSkin: "classic",
+  unlockedSkins: ["classic"],
+  missions: {
+    spawnCoin: { progress: 0, claimed: false },
+    hitCenter: { progress: 0, claimed: false },
+    earnGold: { progress: 0, claimed: false }
+  },
   buffs: {
     goldBoostUntil: 0,
     autoCollectUntil: 0,
@@ -33,6 +42,11 @@ export function loadSave(): PlayerSave {
         ...defaultSave().buffs,
         ...parsed.buffs
       },
+      missions: {
+        ...defaultSave().missions,
+        ...parsed.missions
+      },
+      unlockedSkins: parsed.unlockedSkins?.length ? parsed.unlockedSkins : defaultSave().unlockedSkins,
       upgrades: {
         ...defaultSave().upgrades,
         ...parsed.upgrades

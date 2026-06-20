@@ -1,9 +1,24 @@
 import Phaser from "phaser";
 import "./style.css";
-import { centerReward, coinCooldown, effectiveUpgradeCost, pusherSpeed, tryUpgrade, upgrades } from "./systems/economy";
+import {
+  arcadeGoals,
+  buyOrEquipSkin,
+  centerReward,
+  claimMission,
+  coinCooldown,
+  currentArcadeGoal,
+  effectiveUpgradeCost,
+  increaseMission,
+  missions,
+  pusherSpeed,
+  repairNextArcade,
+  skins,
+  tryUpgrade,
+  upgrades
+} from "./systems/economy";
 import { mechanismRewards, pickMechanismReward } from "./systems/rewards";
 import { loadSave, saveGame } from "./systems/save";
-import type { MechanismReward, PlayerSave, UpgradeId } from "./types";
+import type { MechanismReward, MissionId, PlayerSave, SkinConfig, SkinId, UpgradeId } from "./types";
 
 const WIDTH = 430;
 const HEIGHT = 760;
@@ -22,8 +37,11 @@ class GameScene extends Phaser.Scene {
   private tip!: Phaser.GameObjects.Text;
   private upgradeTexts: Partial<Record<UpgradeId, Phaser.GameObjects.Text>> = {};
   private buffText!: Phaser.GameObjects.Text;
+  private goalText!: Phaser.GameObjects.Text;
+  private goalBar!: Phaser.GameObjects.Rectangle;
   private spawnX = WIDTH / 2;
   private dropGuide!: Phaser.GameObjects.Rectangle;
+  private panel?: Phaser.GameObjects.Container;
 
   constructor() {
     super("game");
@@ -31,6 +49,7 @@ class GameScene extends Phaser.Scene {
 
   create(): void {
     this.save = loadSave();
+    this.applyOfflineProgress();
     this.matter.world.setBounds(54, 104, WIDTH - 108, 510, 32, true, true, false, true);
     this.matter.world.engine.positionIterations = 8;
     this.matter.world.engine.velocityIterations = 6;
@@ -69,23 +88,8 @@ class GameScene extends Phaser.Scene {
   }
 
   private createTextures(): void {
-    const coin = this.add.graphics();
-    coin.fillStyle(0xffd86a, 1);
-    coin.fillCircle(32, 32, 30);
-    coin.fillStyle(0xf5a928, 1);
-    coin.fillCircle(32, 32, 24);
-    coin.fillStyle(0xffd86a, 1);
-    coin.fillCircle(32, 32, 20);
-    coin.lineStyle(4, 0xfff2a8, 0.95);
-    coin.strokeCircle(32, 32, 28);
-    coin.lineStyle(3, 0xbe7418, 0.8);
-    coin.strokeCircle(32, 32, 23);
-    coin.lineStyle(2, 0xfff2a8, 0.9);
-    coin.strokeCircle(32, 32, 18);
-    coin.fillStyle(0xfff7b0, 0.8);
-    coin.fillEllipse(23, 22, 15, 9);
-    coin.generateTexture("coin", 64, 64);
-    coin.destroy();
+    this.createCoinTexture("coin", skins.find((skin) => skin.id === this.save.activeSkin) ?? skins[0]);
+    skins.forEach((skin) => this.createCoinTexture(`coin-${skin.id}`, skin));
 
     const sensor = this.add.graphics();
     sensor.fillStyle(0xffd34f, 1);
@@ -98,6 +102,27 @@ class GameScene extends Phaser.Scene {
     sensor.fillCircle(23, 24, 3);
     sensor.generateTexture("lucky-sensor", 64, 64);
     sensor.destroy();
+  }
+
+  private createCoinTexture(key: string, skin: SkinConfig): void {
+    if (this.textures.exists(key)) this.textures.remove(key);
+    const coin = this.add.graphics();
+    coin.fillStyle(skin.colors.outer, 1);
+    coin.fillCircle(32, 32, 30);
+    coin.fillStyle(skin.colors.middle, 1);
+    coin.fillCircle(32, 32, 24);
+    coin.fillStyle(skin.colors.inner, 1);
+    coin.fillCircle(32, 32, 20);
+    coin.lineStyle(4, skin.colors.shine, 0.95);
+    coin.strokeCircle(32, 32, 28);
+    coin.lineStyle(3, skin.colors.rim, 0.8);
+    coin.strokeCircle(32, 32, 23);
+    coin.lineStyle(2, skin.colors.shine, 0.9);
+    coin.strokeCircle(32, 32, 18);
+    coin.fillStyle(skin.colors.shine, 0.8);
+    coin.fillEllipse(23, 22, 15, 9);
+    coin.generateTexture(key, 64, 64);
+    coin.destroy();
   }
 
   private createBackdrop(): void {
@@ -198,6 +223,14 @@ class GameScene extends Phaser.Scene {
       align: "right",
       lineSpacing: 5
     }).setOrigin(1, 0);
+
+    this.goalText = this.add.text(WIDTH / 2, 630, "", {
+      color: "#fff7d1",
+      fontSize: "12px",
+      fontStyle: "700"
+    }).setOrigin(0.5);
+    this.add.rectangle(WIDTH / 2, 650, 304, 12, 0x07315f).setStrokeStyle(1, 0x6ed7ff);
+    this.goalBar = this.add.rectangle(64, 650, 0, 8, 0xffd34f).setOrigin(0, 0.5);
   }
 
   private createControls(): void {
@@ -235,6 +268,23 @@ class GameScene extends Phaser.Scene {
       this.flashTip("模拟激励视频完成：获得 30 Coin");
       this.persist();
     });
+
+    this.createPanelButton(256, 704, "图鉴", () => this.showGalleryPanel());
+    this.createPanelButton(318, 704, "任务", () => this.showMissionPanel());
+    this.createPanelButton(380, 704, "外观", () => this.showSkinPanel());
+  }
+
+  private createPanelButton(x: number, y: number, label: string, callback: () => void): void {
+    const button = this.add.rectangle(x, y, 52, 42, 0x005bb4).setStrokeStyle(2, 0x6ed7ff);
+    const text = this.add.text(x, y, label, {
+      color: "#d8f7ff",
+      fontSize: "13px",
+      fontStyle: "700"
+    }).setOrigin(0.5);
+    button.setInteractive({ useHandCursor: true });
+    text.setInteractive({ useHandCursor: true });
+    button.on("pointerdown", callback);
+    text.on("pointerdown", callback);
   }
 
   private createUpgradePanel(): void {
@@ -281,9 +331,10 @@ class GameScene extends Phaser.Scene {
     }
     this.lastDrop = now;
     this.save.coin -= 1;
+    increaseMission(this.save, "spawnCoin", 1);
 
     const x = Phaser.Math.Clamp(spawnX + Phaser.Math.Between(-10, 10), 132, 298);
-    const coin = this.matter.add.image(x, 142, "coin", undefined, {
+    const coin = this.matter.add.image(x, 142, `coin-${this.save.activeSkin}`, undefined, {
       shape: { type: "circle", radius: 21 },
       restitution: 0.05,
       friction: 0.14,
@@ -322,12 +373,14 @@ class GameScene extends Phaser.Scene {
       let reward = Phaser.Math.Between(1, 3);
       if (x > 138 && x < 292) {
         reward += centerReward(this.save.upgrades.slot);
+        increaseMission(this.save, "hitCenter", 1);
         this.flashTip("图鉴槽命中：获得修复材料");
       }
       if (this.save.buffs.goldBoostUntil > Date.now()) {
         reward = Math.ceil(reward * 1.5);
       }
       this.save.gold += reward;
+      increaseMission(this.save, "earnGold", reward);
       this.spawnRewardText(x, Math.min(y, 616), `+${reward}`);
       this.recycleCoin(coin);
       this.coins.splice(i, 1);
@@ -345,8 +398,12 @@ class GameScene extends Phaser.Scene {
 
   private updateHud(): void {
     const now = Date.now();
-    this.hud.setText(`Coin ${this.save.coin}/50\nGold ${this.save.gold}\n碎片 ${this.save.fragments}\n机关 ${this.save.mechanismTriggers}`);
+    this.hud.setText(`Coin ${this.save.coin}/50\nGold ${this.save.gold}\nGem ${this.save.gem}\n碎片 ${this.save.fragments}\n机关 ${this.save.mechanismTriggers}`);
     this.buffText.setText(this.activeBuffLines(now).join("\n"));
+    const goal = currentArcadeGoal(this.save);
+    this.goalText.setText(this.save.repairedCount >= arcadeGoals.length ? "街机厅修复完成" : `目标：${goal.costGold} Gold 修复《${goal.label}》`);
+    const progress = this.save.repairedCount >= arcadeGoals.length ? 1 : Phaser.Math.Clamp(this.save.gold / goal.costGold, 0, 1);
+    this.goalBar.width = 304 * progress;
     upgrades.forEach((upgrade) => {
       const level = this.save.upgrades[upgrade.id];
       const cost = effectiveUpgradeCost(this.save, upgrade, now);
@@ -493,6 +550,154 @@ class GameScene extends Phaser.Scene {
     const minutes = Math.floor(seconds / 60);
     const rest = seconds % 60;
     return `${minutes}:${rest.toString().padStart(2, "0")}`;
+  }
+
+  private showGalleryPanel(): void {
+    const rows = arcadeGoals.map((goal, index) => {
+      const unlocked = this.save.repairedCount > index;
+      return `${unlocked ? "已修复" : "待修复"}  ${goal.label}  ${goal.costGold}G`;
+    });
+    const actions = this.save.repairedCount < arcadeGoals.length ? [{ label: "修复当前", action: () => this.repairCurrentArcade() }] : [];
+    this.showInfoPanel("修复图鉴", rows, actions);
+  }
+
+  private showMissionPanel(): void {
+    const rows = missions.map((mission) => {
+      const state = this.save.missions[mission.id];
+      const ready = state.progress >= mission.target && !state.claimed;
+      const suffix = state.claimed ? "已领取" : ready ? "可领取" : `${state.progress}/${mission.target}`;
+      return `${mission.label}  ${suffix}  +${mission.rewardGem} Gem`;
+    });
+    const actions = missions
+      .filter((mission) => {
+        const state = this.save.missions[mission.id];
+        return state.progress >= mission.target && !state.claimed;
+      })
+      .map((mission) => ({
+        label: `领 ${mission.rewardGem}Gm`,
+        action: () => this.claimMissionReward(mission.id)
+      }));
+    this.showInfoPanel("每日任务", rows, actions);
+  }
+
+  private showSkinPanel(): void {
+    const rows = skins.map((skin) => {
+      const active = this.save.activeSkin === skin.id;
+      const unlocked = this.save.unlockedSkins.includes(skin.id);
+      const cost = this.save.buffs.skinDiscountUntil > Date.now() ? Math.floor(skin.costGem * 0.8) : skin.costGem;
+      return `${active ? "装配中" : unlocked ? "已解锁" : `${cost} Gem`}  ${skin.label}`;
+    });
+    const actions = skins.map((skin) => ({
+      label: this.save.unlockedSkins.includes(skin.id) ? skin.label.slice(0, 4) : `${skin.costGem}Gm`,
+      action: () => this.buyOrEquipCoinSkin(skin.id)
+    }));
+    this.showInfoPanel("外观商店", rows, actions);
+  }
+
+  private showInfoPanel(title: string, rows: string[], actions: Array<{ label: string; action: () => void }>): void {
+    this.panel?.destroy();
+    const panel = this.add.container(WIDTH / 2, HEIGHT / 2);
+    panel.setDepth(30);
+    panel.add(this.add.rectangle(0, 0, WIDTH, HEIGHT, 0x06111f, 0.55));
+    panel.add(this.add.rectangle(0, 24, 360, 420, 0x0080ff, 0.98).setStrokeStyle(4, 0xffffff));
+    panel.add(this.add.text(0, -154, title, {
+      color: "#ffffff",
+      fontSize: "24px",
+      fontStyle: "700"
+    }).setOrigin(0.5));
+
+    rows.slice(0, 8).forEach((row, index) => {
+      const y = -104 + index * 34;
+      panel.add(this.add.rectangle(0, y, 312, 25, 0x0369a1, 0.8).setStrokeStyle(1, 0x6ed7ff));
+      panel.add(this.add.text(-146, y, row, {
+        color: "#e0f7ff",
+        fontSize: "12px"
+      }).setOrigin(0, 0.5));
+    });
+
+    actions.slice(0, 4).forEach((item, index) => {
+      const x = -117 + index * 78;
+      const button = this.add.rectangle(x, 150, 68, 32, 0xffd34f).setStrokeStyle(2, 0xffffff);
+      const label = this.add.text(x, 150, item.label, {
+        color: "#07315f",
+        fontSize: "11px",
+        fontStyle: "700"
+      }).setOrigin(0.5);
+      button.setInteractive({ useHandCursor: true });
+      label.setInteractive({ useHandCursor: true });
+      button.on("pointerdown", item.action);
+      label.on("pointerdown", item.action);
+      panel.add([button, label]);
+    });
+
+    const close = this.add.rectangle(0, 198, 120, 32, 0x07315f).setStrokeStyle(2, 0x6ed7ff);
+    const closeText = this.add.text(0, 198, "关闭", {
+      color: "#ffffff",
+      fontSize: "14px",
+      fontStyle: "700"
+    }).setOrigin(0.5);
+    close.setInteractive({ useHandCursor: true });
+    closeText.setInteractive({ useHandCursor: true });
+    close.on("pointerdown", () => {
+      panel.destroy();
+      this.panel = undefined;
+    });
+    closeText.on("pointerdown", () => {
+      panel.destroy();
+      this.panel = undefined;
+    });
+    panel.add([close, closeText]);
+
+    this.panel = panel;
+  }
+
+  private claimMissionReward(id: MissionId): void {
+    if (claimMission(this.save, id)) {
+      this.flashTip("任务奖励已领取：Gem 增加");
+      this.persist();
+      this.showMissionPanel();
+      return;
+    }
+    this.flashTip("任务尚未达成");
+  }
+
+  private buyOrEquipCoinSkin(id: SkinId): void {
+    const result = buyOrEquipSkin(this.save, id);
+    if (result === "locked") {
+      this.flashTip("Gem 不足，先完成每日任务");
+      return;
+    }
+    const skin = skins.find((item) => item.id === this.save.activeSkin) ?? skins[0];
+    this.createCoinTexture(`coin-${skin.id}`, skin);
+    this.coins.forEach((coin) => coin.setTexture(`coin-${skin.id}`));
+    this.flashTip(result === "bought" ? "外观解锁并装配" : "外观已装配");
+    this.persist();
+    this.showSkinPanel();
+  }
+
+  private repairCurrentArcade(): void {
+    const repaired = repairNextArcade(this.save);
+    if (!repaired) {
+      this.flashTip("Gold 不足，继续修复材料收集");
+      return;
+    }
+    this.flashTip(`已修复：${repaired.label}`);
+    this.persist();
+    this.showGalleryPanel();
+  }
+
+  private applyOfflineProgress(): void {
+    const elapsedSec = Math.floor((Date.now() - this.save.lastSaveAt) / 1000);
+    if (elapsedSec < 30) return;
+    const cappedSec = Math.min(elapsedSec, 28800);
+    const gold = Math.floor(cappedSec * (0.04 + this.save.upgrades.slot * 0.015));
+    const recoveredCoin = Math.min(50 - this.save.coin, Math.floor(cappedSec / 60));
+    if (gold <= 0 && recoveredCoin <= 0) return;
+    this.save.gold += gold;
+    this.save.coin += recoveredCoin;
+    this.time.delayedCall(400, () => {
+      this.showInfoPanel("离线收益", [`离线 ${Math.floor(elapsedSec / 60)} 分钟`, `Gold +${gold}`, `Coin +${recoveredCoin}`], []);
+    });
   }
 
   private spawnRewardText(x: number, y: number, text: string): void {
