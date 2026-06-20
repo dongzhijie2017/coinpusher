@@ -15,6 +15,12 @@ tags:
 
 把推币机游戏 MVP 做成一个可静态发布的 Web 项目，代码托管到 GitHub，再用 Netlify 免费额度自动构建和发布。
 
+GitHub 仓库：
+
+```text
+https://github.com/dongzhijie2017/coinpusher.git
+```
+
 ## 技术栈
 
 - Vite
@@ -59,21 +65,21 @@ netlify.toml
 
 ## GitHub 推送步骤
 
-当前本地仓库已经初始化：
+当前本地仓库已经初始化并推送：
 
 ```text
 branch: main
-commit: 052be5c Initial coin pusher MVP
+remote: origin https://github.com/dongzhijie2017/coinpusher.git
+latest commit: e015cb8 Document GitHub Netlify deployment
 ```
 
-下一步只需要创建 GitHub 远程仓库，然后执行：
+后续推送：
 
 ```bash
-git remote add origin <你的 GitHub 仓库地址>
-git push -u origin main
+git add .
+git commit -m "Update game"
+git push
 ```
-
-如果远程仓库已经存在，只需要替换 `<你的 GitHub 仓库地址>`。
 
 ## Netlify 操作步骤
 
