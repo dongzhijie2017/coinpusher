@@ -21,6 +21,7 @@ export interface PlayerSave {
   fragments: number;
   mechanismTriggers: number;
   repairedCount: number;
+  autoDrop: boolean;
   activeSkin: SkinId;
   unlockedSkins: SkinId[];
   missions: Record<MissionId, MissionProgress>;

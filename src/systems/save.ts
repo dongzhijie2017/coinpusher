@@ -9,6 +9,7 @@ export const defaultSave = (): PlayerSave => ({
   fragments: 0,
   mechanismTriggers: 0,
   repairedCount: 0,
+  autoDrop: false,
   activeSkin: "classic",
   unlockedSkins: ["classic"],
   missions: {
