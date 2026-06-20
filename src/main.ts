@@ -27,6 +27,8 @@ const NATURAL_COIN_CAP = 50;
 const SUPPLY_COIN_CAP = 80;
 const CENTER_SLOT_LEFT = 144;
 const CENTER_SLOT_RIGHT = 286;
+const PUSHER_MIN_Y = 432;
+const PUSHER_MAX_Y = 510;
 
 class GameScene extends Phaser.Scene {
   private save!: PlayerSave;
@@ -198,33 +200,36 @@ class GameScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     this.add.rectangle(WIDTH / 2, 386, 314, 352, 0xd8fbff, 0.19).setStrokeStyle(3, 0xf4fdff, 0.82);
-    this.add.rectangle(WIDTH / 2, 390, 276, 316, 0x024c93, 0.14);
-    this.add.rectangle(108, 382, 10, 300, 0xffffff, 0.15).setAngle(12);
-    this.add.rectangle(WIDTH - 108, 382, 10, 300, 0xffffff, 0.12).setAngle(-12);
+    this.add.rectangle(WIDTH / 2, 394, 276, 330, 0x9b1c2a, 0.92);
+    this.add.rectangle(WIDTH / 2, 394, 256, 294, 0xb91f2e, 0.62);
+    this.createMechanismBoard();
+    this.add.rectangle(108, 394, 10, 314, 0xffffff, 0.13).setAngle(12);
+    this.add.rectangle(WIDTH - 108, 394, 10, 314, 0xffffff, 0.1).setAngle(-12);
 
     this.add.rectangle(WIDTH / 2, 198, 150, 34, 0x0d315f).setStrokeStyle(3, 0xd8e4f2);
     this.add.rectangle(WIDTH / 2, 198, 100, 16, 0x071932);
     this.dropGuide = this.add.rectangle(this.spawnX, 220, 34, 5, 0xfff2a8, 0.92);
 
-    this.add.rectangle(WIDTH / 2, 562, 304, 18, 0xffcf3f).setStrokeStyle(2, 0xfff2a8);
-    this.add.rectangle(WIDTH / 2, 600, 150, 58, 0xf7f7f2).setStrokeStyle(3, 0x25344a);
+    this.add.rectangle(WIDTH / 2, 562, 304, 18, 0xffcf3f).setStrokeStyle(2, 0xfff2a8).setDepth(3);
+    this.createStaticCoinBed();
+    this.add.rectangle(WIDTH / 2, 600, 150, 58, 0xf7f7f2).setStrokeStyle(3, 0x25344a).setDepth(8);
     this.add.text(WIDTH / 2, 600, "中央修复槽", {
       color: "#07315f",
       fontSize: "12px",
       fontStyle: "700"
-    }).setOrigin(0.5);
-    this.add.rectangle(114, 600, 74, 58, 0x0067cb).setStrokeStyle(3, 0x6ed7ff);
-    this.add.rectangle(WIDTH - 114, 600, 74, 58, 0x0067cb).setStrokeStyle(3, 0x6ed7ff);
+    }).setOrigin(0.5).setDepth(9);
+    this.add.rectangle(114, 600, 74, 58, 0x0067cb).setStrokeStyle(3, 0x6ed7ff).setDepth(8);
+    this.add.rectangle(WIDTH - 114, 600, 74, 58, 0x0067cb).setStrokeStyle(3, 0x6ed7ff).setDepth(8);
     this.add.text(114, 600, "回收", {
       color: "#d8f7ff",
       fontSize: "11px",
       fontStyle: "700"
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(9);
     this.add.text(WIDTH - 114, 600, "回收", {
       color: "#d8f7ff",
       fontSize: "11px",
       fontStyle: "700"
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(9);
 
     this.matter.add.rectangle(72, 382, 18, 406, { isStatic: true, label: "left-wall" });
     this.matter.add.rectangle(WIDTH - 72, 382, 18, 406, { isStatic: true, label: "right-wall" });
@@ -238,10 +243,56 @@ class GameScene extends Phaser.Scene {
     });
   }
 
+  private createMechanismBoard(): void {
+    this.add.rectangle(WIDTH / 2, 244, 246, 25, 0x7f1725, 0.96).setStrokeStyle(2, 0xffd36e);
+    this.add.text(WIDTH / 2, 244, "零件扫描：命中中央槽提升修复效率", {
+      color: "#fff1c7",
+      fontSize: "11px",
+      fontStyle: "700"
+    }).setOrigin(0.5);
+
+    const columns = [
+      { x: 150, values: ["20", "80", "200"] },
+      { x: 215, values: ["60", "120", "300"] },
+      { x: 280, values: ["40", "100", "碎片"] }
+    ];
+
+    columns.forEach((column) => {
+      this.add.rectangle(column.x, 352, 56, 142, 0xfff8ed, 0.98).setStrokeStyle(3, 0x7f1725);
+      column.values.forEach((value, index) => {
+        const y = 306 + index * 46;
+        if (index === 1) this.add.rectangle(column.x, y, 52, 38, 0xffdf63, 0.88);
+        this.add.text(column.x, y, value, {
+          color: index === 1 ? "#c82131" : "#dc7782",
+          fontSize: value.length > 3 ? "15px" : "24px",
+          fontStyle: "700"
+        }).setOrigin(0.5);
+      });
+    });
+
+    [126, 174, 224, 274, 324].forEach((x, index) => {
+      this.add.image(x, 274 + (index % 2) * 8, `coin-${this.save.activeSkin}`).setScale(0.23).setAngle(index * 18 - 24);
+      this.add.image(x + 8, 433 - (index % 2) * 7, `coin-${this.save.activeSkin}`).setScale(0.22).setAngle(24 - index * 14);
+    });
+
+    this.add.rectangle(WIDTH / 2, 494, 202, 8, 0x271409).setStrokeStyle(2, 0xffe68a);
+  }
+
+  private createStaticCoinBed(): void {
+    for (let i = 0; i < 34; i += 1) {
+      const x = 90 + (i % 17) * 15 + Phaser.Math.Between(-4, 4);
+      const y = 548 + Math.floor(i / 17) * 17 + Phaser.Math.Between(-3, 4);
+      this.add.image(x, y, `coin-${this.save.activeSkin}`)
+        .setScale(0.34 + (i % 3) * 0.025)
+        .setAngle(Phaser.Math.Between(-28, 28))
+        .setDepth(2);
+    }
+  }
+
   private createPusher(): void {
-    this.pusherVisual = this.add.rectangle(WIDTH / 2, 338, 286, 42, 0xd8e4f2).setStrokeStyle(3, 0x8aa2bd);
-    this.pusherShine = this.add.rectangle(WIDTH / 2, 326, 260, 8, 0xffffff, 0.35);
-    this.pusher = this.matter.add.rectangle(WIDTH / 2, 338, 304, 62, {
+    this.pusherVisual = this.add.rectangle(WIDTH / 2, 462, 286, 42, 0xf6d24b).setStrokeStyle(3, 0xfff2a8).setDepth(6);
+    this.pusherShine = this.add.rectangle(WIDTH / 2, 450, 260, 8, 0xffffff, 0.35).setDepth(7);
+    this.pusher = this.matter.add.rectangle(WIDTH / 2, 462, 304, 62, {
       isStatic: true,
       label: "pusher",
       friction: 0.18
@@ -249,22 +300,23 @@ class GameScene extends Phaser.Scene {
   }
 
   private createLuckySensor(): void {
-    this.add.text(WIDTH / 2, 258, "移动小黄鸭", {
-      color: "#e9fbff",
+    this.add.text(WIDTH / 2, 468, "小黄鸭轨道", {
+      color: "#fff1c7",
       fontSize: "13px",
       fontStyle: "700"
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(8);
 
-    this.luckySensor = this.matter.add.image(WIDTH / 2, 288, "lucky-sensor", undefined, {
+    this.luckySensor = this.matter.add.image(WIDTH / 2, 494, "lucky-sensor", undefined, {
       isSensor: true,
       isStatic: true,
       label: "lucky-sensor"
     });
     this.luckySensor.setScale(0.72);
+    this.luckySensor.setDepth(9);
 
     this.tweens.add({
       targets: this.luckySensor,
-      x: { from: 112, to: 318 },
+      x: { from: 122, to: 308 },
       duration: 2800,
       yoyo: true,
       repeat: -1
@@ -407,10 +459,10 @@ class GameScene extends Phaser.Scene {
   }
 
   private seedCoinPile(): void {
-    const count = Math.min(54, 24 + this.save.upgrades.slot * 3);
+    const count = Math.min(64, 34 + this.save.upgrades.slot * 3);
     for (let i = 0; i < count; i += 1) {
       const x = Phaser.Math.Between(112, 318);
-      const y = Phaser.Math.Between(430, 548);
+      const y = Phaser.Math.Between(506, 575);
       const coin = this.createPhysicalCoin(x, y);
       coin.setData("seeded", true);
     }
@@ -425,6 +477,7 @@ class GameScene extends Phaser.Scene {
         if (!sensorBody || !coinBody) return;
         const coin = this.coins.find((item) => item.body === coinBody);
         if (!coin) return;
+        if (coin.getData("seeded")) return;
         const data = coin.getData("mechanismTriggered") as boolean | undefined;
         if (data || this.mechanismBusy) return;
         coin.setData("mechanismTriggered", true);
@@ -460,9 +513,10 @@ class GameScene extends Phaser.Scene {
       label: "coin"
     });
     coin.setScale(0.68);
+    coin.setDepth(5);
     coin.setBounce(0.05);
     coin.setFriction(0.15, 0.03, 0.15);
-    coin.setVelocity(0, 0.45);
+    coin.setVelocity(0, 0.58);
     coin.setAngularVelocity(Phaser.Math.FloatBetween(-0.08, 0.08));
     this.coins.push(coin);
 
@@ -475,9 +529,9 @@ class GameScene extends Phaser.Scene {
   private updatePusher(delta: number): void {
     const speed = pusherSpeed(this.save.upgrades.pusher) * delta * 0.055;
     const nextY = this.pusher.position.y + speed * this.pusherDirection;
-    if (nextY > 392) this.pusherDirection = -1;
-    if (nextY < 320) this.pusherDirection = 1;
-    const y = Phaser.Math.Clamp(nextY, 320, 392);
+    if (nextY > PUSHER_MAX_Y) this.pusherDirection = -1;
+    if (nextY < PUSHER_MIN_Y) this.pusherDirection = 1;
+    const y = Phaser.Math.Clamp(nextY, PUSHER_MIN_Y, PUSHER_MAX_Y);
     this.matter.body.setPosition(this.pusher, { x: WIDTH / 2, y });
     this.pusherVisual.setPosition(WIDTH / 2, y);
     this.pusherShine.setPosition(WIDTH / 2, y - 12);
