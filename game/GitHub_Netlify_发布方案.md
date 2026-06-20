@@ -92,6 +92,30 @@ git push
 7. Publish directory 填 `dist`。
 8. 点击 Deploy。
 
+## Netlify 看不到 GitHub 仓库时
+
+当前仓库地址：
+
+```text
+https://github.com/dongzhijie2017/coinpusher
+```
+
+如果 Netlify 导入项目时看不到 `coinpusher`，优先检查 GitHub App 授权：
+
+1. 在 Netlify 的导入页面选择 GitHub 后，点击 `Configure Netlify on GitHub` 或类似的配置入口。
+2. 进入 GitHub 的 Netlify App 安装设置。
+3. Repository access 选择：
+   - `All repositories`，或
+   - `Only select repositories` 并勾选 `dongzhijie2017/coinpusher`。
+4. 保存后回到 Netlify，刷新仓库列表。
+5. 如果仍看不到，使用 Netlify 的 `Deploy manually` 或 `Import from Git URL` 入口，填入：
+
+```text
+https://github.com/dongzhijie2017/coinpusher.git
+```
+
+GitHub 仓库已确认存在并已推送 `main` 分支；Netlify 看不到通常不是代码问题，而是 Netlify GitHub App 尚未授权到这个新仓库。
+
 ## 后续自动发布
 
 每次提交并推送到 GitHub：
