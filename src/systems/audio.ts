@@ -2,13 +2,35 @@ import type { SoundType } from "../types";
 
 export class AudioSystem {
   private ctx: AudioContext | null = null;
+  private masterGain: GainNode | null = null;
   private enabled = true;
   private initialized = false;
+  private lastPlayedAt: Partial<Record<SoundType, number>> = {};
+  private readonly cooldownMs: Partial<Record<SoundType, number>> = {
+    coinDrop: 80,
+    coinSpawn: 45,
+    coinCollect: 55,
+    centerHit: 180,
+    mechanismRoll: 900,
+    mechanismStop: 200,
+    upgrade: 180,
+    error: 120,
+    giftPack: 180,
+    offline: 250,
+    click: 80
+  };
 
   init(): void {
     if (this.initialized) return;
     try {
-      this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioContextCtor =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextCtor) return;
+      this.ctx = new AudioContextCtor();
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.gain.value = 0.68;
+      this.masterGain.connect(this.ctx.destination);
       this.initialized = true;
     } catch {
       // Web Audio not supported
@@ -25,6 +47,7 @@ export class AudioSystem {
 
   play(type: SoundType): void {
     if (!this.enabled || !this.ctx) return;
+    if (!this.canPlay(type)) return;
     if (this.ctx.state === "suspended") {
       this.ctx.resume().catch(() => {});
     }
@@ -65,8 +88,21 @@ export class AudioSystem {
     }
   }
 
+  private canPlay(type: SoundType): boolean {
+    const now = Date.now();
+    const cooldown = this.cooldownMs[type] ?? 0;
+    const previous = this.lastPlayedAt[type] ?? 0;
+    if (now - previous < cooldown) return false;
+    this.lastPlayedAt[type] = now;
+    return true;
+  }
+
   private now(): number {
     return this.ctx!.currentTime;
+  }
+
+  private output(): AudioNode {
+    return this.masterGain ?? this.ctx!.destination;
   }
 
   private coinDrop(): void {
@@ -78,7 +114,7 @@ export class AudioSystem {
     osc.frequency.exponentialRampToValueAtTime(440, t + 0.08);
     gain.gain.setValueAtTime(0.12, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-    osc.connect(gain).connect(this.ctx!.destination);
+    osc.connect(gain).connect(this.output());
     osc.start(t);
     osc.stop(t + 0.12);
   }
@@ -92,7 +128,7 @@ export class AudioSystem {
     osc.frequency.exponentialRampToValueAtTime(600, t + 0.06);
     gain.gain.setValueAtTime(0.08, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-    osc.connect(gain).connect(this.ctx!.destination);
+    osc.connect(gain).connect(this.output());
     osc.start(t);
     osc.stop(t + 0.08);
   }
@@ -106,7 +142,7 @@ export class AudioSystem {
     osc.frequency.setValueAtTime(880, t + 0.04);
     gain.gain.setValueAtTime(0.1, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-    osc.connect(gain).connect(this.ctx!.destination);
+    osc.connect(gain).connect(this.output());
     osc.start(t);
     osc.stop(t + 0.12);
   }
@@ -120,7 +156,7 @@ export class AudioSystem {
       osc.frequency.setValueAtTime(freq, t + i * 0.06);
       gain.gain.setValueAtTime(0.12, t + i * 0.06);
       gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.2);
-      osc.connect(gain).connect(this.ctx!.destination);
+      osc.connect(gain).connect(this.output());
       osc.start(t + i * 0.06);
       osc.stop(t + i * 0.06 + 0.2);
     });
@@ -136,7 +172,7 @@ export class AudioSystem {
     gain.gain.setValueAtTime(0.03, t);
     gain.gain.linearRampToValueAtTime(0.03, t + 1.0);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
-    osc.connect(gain).connect(this.ctx!.destination);
+    osc.connect(gain).connect(this.output());
     osc.start(t);
     osc.stop(t + 1.1);
   }
@@ -149,7 +185,7 @@ export class AudioSystem {
     osc.frequency.setValueAtTime(1200, t);
     gain.gain.setValueAtTime(0.15, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
-    osc.connect(gain).connect(this.ctx!.destination);
+    osc.connect(gain).connect(this.output());
     osc.start(t);
     osc.stop(t + 0.3);
   }
@@ -163,7 +199,7 @@ export class AudioSystem {
       osc.frequency.setValueAtTime(freq, t + i * 0.08);
       gain.gain.setValueAtTime(0.1, t + i * 0.08);
       gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.18);
-      osc.connect(gain).connect(this.ctx!.destination);
+      osc.connect(gain).connect(this.output());
       osc.start(t + i * 0.08);
       osc.stop(t + i * 0.08 + 0.18);
     });
@@ -177,7 +213,7 @@ export class AudioSystem {
     osc.frequency.setValueAtTime(200, t);
     gain.gain.setValueAtTime(0.08, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    osc.connect(gain).connect(this.ctx!.destination);
+    osc.connect(gain).connect(this.output());
     osc.start(t);
     osc.stop(t + 0.15);
   }
@@ -191,7 +227,7 @@ export class AudioSystem {
       osc.frequency.setValueAtTime(freq, t + i * 0.07);
       gain.gain.setValueAtTime(0.1, t + i * 0.07);
       gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.07 + 0.15);
-      osc.connect(gain).connect(this.ctx!.destination);
+      osc.connect(gain).connect(this.output());
       osc.start(t + i * 0.07);
       osc.stop(t + i * 0.07 + 0.15);
     });
@@ -206,7 +242,7 @@ export class AudioSystem {
     osc.frequency.setValueAtTime(554, t + 0.15);
     gain.gain.setValueAtTime(0.1, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
-    osc.connect(gain).connect(this.ctx!.destination);
+    osc.connect(gain).connect(this.output());
     osc.start(t);
     osc.stop(t + 0.3);
   }
@@ -219,7 +255,7 @@ export class AudioSystem {
     osc.frequency.setValueAtTime(800, t);
     gain.gain.setValueAtTime(0.05, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-    osc.connect(gain).connect(this.ctx!.destination);
+    osc.connect(gain).connect(this.output());
     osc.start(t);
     osc.stop(t + 0.04);
   }

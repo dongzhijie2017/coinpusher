@@ -13,6 +13,14 @@ export class ParticleSystem {
     this.emitters = [];
   }
 
+  private destroyEmitterAfter(emitter: Phaser.GameObjects.Particles.ParticleEmitter, delay: number): void {
+    this.emitters.push(emitter);
+    this.scene.time.delayedCall(delay, () => {
+      emitter.destroy();
+      this.emitters = this.emitters.filter((item) => item !== emitter);
+    });
+  }
+
   /** 金币收集飘散粒子 */
   spawnCollect(x: number, y: number, color = 0xffd34f, count = 6): void {
     const particles = this.scene.add.particles(x, y, "coin-particle", {
@@ -27,7 +35,7 @@ export class ParticleSystem {
       emitting: false
     });
     particles.explode(count);
-    this.scene.time.delayedCall(900, () => particles.destroy());
+    this.destroyEmitterAfter(particles, 900);
   }
 
   /** 中央槽命中爆发 */
@@ -46,7 +54,7 @@ export class ParticleSystem {
         emitting: false
       });
       particles.explode(4);
-      this.scene.time.delayedCall(1000, () => particles.destroy());
+      this.destroyEmitterAfter(particles, 1000);
     });
     // 环形冲击波
     const ring = this.scene.add.circle(x, y, 8, 0xffd34f, 0.8).setDepth(20);
@@ -95,7 +103,7 @@ export class ParticleSystem {
       emitting: false
     });
     particles.explode(10);
-    this.scene.time.delayedCall(900, () => particles.destroy());
+    this.destroyEmitterAfter(particles, 900);
   }
 
   /** 礼盒掉落拖尾 */

@@ -99,6 +99,8 @@ class GameScene extends Phaser.Scene {
   private glassWalls: Phaser.GameObjects.Rectangle[] = [];
   private tipResetEvent?: Phaser.Time.TimerEvent;
   private adRewardPending = false;
+  private collisionHandler?: (event: Phaser.Physics.Matter.Events.CollisionStartEvent) => void;
+  private sceneCleanedUp = false;
 
   constructor() {
     super("game");
@@ -124,6 +126,7 @@ class GameScene extends Phaser.Scene {
     this.createHud();
     this.createControls();
     this.createCollisionHandlers();
+    this.bindSceneLifecycle();
     this.seedCoinPile();
     this.startAmbientEffects();
     this.showTutorialIfNeeded();
@@ -420,8 +423,12 @@ class GameScene extends Phaser.Scene {
     this.clearTutorialOverlay();
 
     const overlay = this.add.container(0, 0).setDepth(50);
-    // 半透明遮罩
-    overlay.add(this.add.rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x000000, 0.55));
+    const dimmer = this.add.rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x000000, 0.55);
+    dimmer.setInteractive({ useHandCursor: false });
+    dimmer.on("pointerdown", (_pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+    });
+    overlay.add(dimmer);
 
     // 高亮区域（镂空效果模拟：在步骤区域上方放一个不遮光的矩形）
     const highlight = this.add.rectangle(step.x, step.y, step.width + 12, step.height + 12, 0x000000, 0).setStrokeStyle(3, 0xffd34f);
@@ -646,7 +653,7 @@ class GameScene extends Phaser.Scene {
   }
 
   private createCollisionHandlers(): void {
-    this.matter.world.on("collisionstart", (event: Phaser.Physics.Matter.Events.CollisionStartEvent) => {
+    this.collisionHandler = (event: Phaser.Physics.Matter.Events.CollisionStartEvent) => {
       event.pairs.forEach((pair) => {
         const bodies = [pair.bodyA, pair.bodyB];
         const coinBody = bodies.find((body) => body.label === "coin");
@@ -669,7 +676,29 @@ class GameScene extends Phaser.Scene {
         coin.setData("mechanismTriggered", true);
         this.triggerMechanism();
       });
-    });
+    };
+    this.matter.world.on("collisionstart", this.collisionHandler);
+  }
+
+  private bindSceneLifecycle(): void {
+    const cleanup = () => this.cleanupScene();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup);
+    this.events.once(Phaser.Scenes.Events.DESTROY, cleanup);
+  }
+
+  private cleanupScene(): void {
+    if (this.sceneCleanedUp) return;
+    this.sceneCleanedUp = true;
+    if (this.collisionHandler) {
+      this.matter.world.off("collisionstart", this.collisionHandler);
+      this.collisionHandler = undefined;
+    }
+    this.tipResetEvent?.remove(false);
+    this.ambientTimer?.remove(false);
+    this.panel?.destroy();
+    this.panel = undefined;
+    this.clearTutorialOverlay();
+    this.particleSystem.destroy();
   }
 
   private dropCoin(spawnX = this.feederX): void {
