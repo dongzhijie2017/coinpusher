@@ -14,7 +14,20 @@
     <script type="module" src="/src/main.ts"></script>
     <script>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
+        const hadController = Boolean(navigator.serviceWorker.controller);
+        let reloadingForUpdate = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!hadController || reloadingForUpdate || sessionStorage.getItem('coin-pusher-sw-refresh') === 'done') return;
+          reloadingForUpdate = true;
+          sessionStorage.setItem('coin-pusher-sw-refresh', 'done');
+          window.location.reload();
+        });
+        window.addEventListener('load', () => {
+          navigator.serviceWorker
+            .register('/sw.js', { updateViaCache: 'none' })
+            .then((registration) => registration.update().catch(() => {}))
+            .catch(() => {});
+        });
       }
     </script>
   </body>
