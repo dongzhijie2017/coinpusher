@@ -1,5 +1,10 @@
 import Phaser from "phaser";
 import "./style.css";
+import { audioSystem } from "./systems/audio";
+import { ParticleSystem } from "./systems/particles";
+import { vibratePreset } from "./systems/vibration";
+import { adSystem } from "./systems/ads";
+import { tutorialSystem } from "./systems/tutorial";
 import {
   arcadeGoals,
   buyOrEquipSkin,
@@ -17,7 +22,7 @@ import {
   upgrades
 } from "./systems/economy";
 import { loadSave, saveGame } from "./systems/save";
-import type { GiftTier, MissionId, PlayerSave, SkinConfig, SkinId, UpgradeId } from "./types";
+import type { AdReward, GiftTier, MissionId, PlayerSave, SkinConfig, SkinId, UpgradeId } from "./types";
 
 const WIDTH = 430;
 const HEIGHT = 760;
@@ -88,6 +93,12 @@ class GameScene extends Phaser.Scene {
   private autoDropText!: Phaser.GameObjects.Text;
   private autoDropIndicator!: Phaser.GameObjects.Arc;
   private reelTexts: Phaser.GameObjects.Text[] = [];
+  private particleSystem!: ParticleSystem;
+  private tutorialOverlay?: Phaser.GameObjects.Container;
+  private ambientTimer?: Phaser.Time.TimerEvent;
+  private glassWalls: Phaser.GameObjects.Rectangle[] = [];
+  private tipResetEvent?: Phaser.Time.TimerEvent;
+  private adRewardPending = false;
 
   constructor() {
     super("game");
@@ -101,15 +112,21 @@ class GameScene extends Phaser.Scene {
     this.matter.world.engine.velocityIterations = 6;
     this.matter.world.engine.constraintIterations = 2;
 
+    audioSystem.init();
     this.createTextures();
+    ParticleSystem.createTextures(this);
+    this.particleSystem = new ParticleSystem(this);
     this.createBackdrop();
     this.createMachine();
+    this.createGlassWalls();
     this.createPusher();
     this.createLuckySensor();
     this.createHud();
     this.createControls();
     this.createCollisionHandlers();
     this.seedCoinPile();
+    this.startAmbientEffects();
+    this.showTutorialIfNeeded();
 
     this.time.addEvent({
       delay: 60000,
@@ -355,8 +372,115 @@ class GameScene extends Phaser.Scene {
     this.pusher = this.matter.add.rectangle(WIDTH / 2, 538, 304, 48, {
       isStatic: true,
       label: "pusher",
-      friction: 0.18
+      friction: 0.15
     });
+  }
+
+  private createGlassWalls(): void {
+    // 左侧玻璃挡板 + 45° 高光
+    const leftGlass = this.add.rectangle(66, 363, 8, 456, 0xd8fbff, 0.12).setDepth(3);
+    const leftShine = this.add.rectangle(64, 363, 3, 456, 0xffffff, 0.28).setAngle(45).setDepth(3);
+    this.glassWalls.push(leftGlass, leftShine);
+
+    // 右侧玻璃挡板 + 45° 高光
+    const rightGlass = this.add.rectangle(WIDTH - 66, 363, 8, 456, 0xd8fbff, 0.12).setDepth(3);
+    const rightShine = this.add.rectangle(WIDTH - 64, 363, 3, 456, 0xffffff, 0.28).setAngle(-45).setDepth(3);
+    this.glassWalls.push(rightGlass, rightShine);
+
+    // 底部玻璃边缘光
+    const bottomGlow = this.add.rectangle(WIDTH / 2, 584, 280, 4, 0x6ed7ff, 0.35).setDepth(3);
+    this.glassWalls.push(bottomGlow);
+  }
+
+  private startAmbientEffects(): void {
+    this.ambientTimer = this.time.addEvent({
+      delay: 2000,
+      loop: true,
+      callback: () => {
+        if (Phaser.Math.Between(0, 100) < 35) {
+          this.particleSystem.spawnAmbientSparkle();
+        }
+      }
+    });
+  }
+
+  private showTutorialIfNeeded(): void {
+    if (tutorialSystem.isAllDone()) return;
+    tutorialSystem.start();
+    this.showNextTutorialStep();
+  }
+
+  private showNextTutorialStep(): void {
+    const step = tutorialSystem.getNextStep();
+    if (!step) {
+      this.clearTutorialOverlay();
+      return;
+    }
+
+    this.clearTutorialOverlay();
+
+    const overlay = this.add.container(0, 0).setDepth(50);
+    // 半透明遮罩
+    overlay.add(this.add.rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x000000, 0.55));
+
+    // 高亮区域（镂空效果模拟：在步骤区域上方放一个不遮光的矩形）
+    const highlight = this.add.rectangle(step.x, step.y, step.width + 12, step.height + 12, 0x000000, 0).setStrokeStyle(3, 0xffd34f);
+    overlay.add(highlight);
+
+    const hasSpaceBelow = step.y + step.height / 2 + 96 < HEIGHT;
+    const textY = hasSpaceBelow
+      ? step.y + step.height / 2 + 42
+      : Math.max(76, step.y - step.height / 2 - 62);
+    const nextY = Math.min(HEIGHT - 34, textY + 52);
+
+    // 提示文字框
+    const textBg = this.add.rectangle(WIDTH / 2, textY, 340, 60, 0x132b40, 0.96).setStrokeStyle(2, 0xffd34f);
+    overlay.add(textBg);
+    const text = this.add.text(WIDTH / 2, textY, step.text, {
+      color: "#fff5d6",
+      fontSize: "14px",
+      fontStyle: "700",
+      align: "center"
+    }).setOrigin(0.5).setWordWrapWidth(320);
+    overlay.add(text);
+
+    // 下一步按钮
+    const nextBtn = this.add.rectangle(WIDTH / 2, nextY, 120, 36, 0xffd34f).setStrokeStyle(2, 0xffffff);
+    const nextLabel = this.add.text(WIDTH / 2, nextY, "知道了", {
+      color: "#07315f",
+      fontSize: "14px",
+      fontStyle: "700"
+    }).setOrigin(0.5);
+    nextBtn.setInteractive({ useHandCursor: true });
+    nextLabel.setInteractive({ useHandCursor: true });
+    nextBtn.on("pointerdown", () => {
+      tutorialSystem.completeStep(step.id);
+      this.showNextTutorialStep();
+    });
+    nextLabel.on("pointerdown", () => {
+      tutorialSystem.completeStep(step.id);
+      this.showNextTutorialStep();
+    });
+    overlay.add([nextBtn, nextLabel]);
+
+    // 跳过全部
+    const skip = this.add.text(WIDTH - 20, 20, "跳过引导", {
+      color: "#ffffff",
+      fontSize: "12px",
+      fontStyle: "700"
+    }).setOrigin(1, 0).setAlpha(0.7).setInteractive({ useHandCursor: true });
+    skip.on("pointerdown", () => {
+      tutorialSystem.skipAll();
+      this.clearTutorialOverlay();
+    });
+    overlay.add(skip);
+
+    this.tutorialOverlay = overlay;
+  }
+
+  private clearTutorialOverlay(): void {
+    this.tutorialOverlay?.destroy();
+    this.tutorialOverlay = undefined;
   }
 
   private createLuckySensor(): void {
@@ -423,9 +547,9 @@ class GameScene extends Phaser.Scene {
     supplyButton.setInteractive({ useHandCursor: true });
     supplyLabel.setInteractive({ useHandCursor: true });
     supplySub.setInteractive({ useHandCursor: true });
-    supplyButton.on("pointerdown", () => this.showSupplyPanel());
-    supplyLabel.on("pointerdown", () => this.showSupplyPanel());
-    supplySub.on("pointerdown", () => this.showSupplyPanel());
+    supplyButton.on("pointerdown", () => { audioSystem.play("click"); this.showSupplyPanel(); });
+    supplyLabel.on("pointerdown", () => { audioSystem.play("click"); this.showSupplyPanel(); });
+    supplySub.on("pointerdown", () => { audioSystem.play("click"); this.showSupplyPanel(); });
 
     const button = this.add.rectangle(WIDTH / 2, 702, 164, 58, 0xff4d57).setStrokeStyle(4, 0xffe0a4);
     const buttonGlow = this.add.rectangle(WIDTH / 2, 694, 134, 12, 0xffa88c, 0.58);
@@ -492,9 +616,9 @@ class GameScene extends Phaser.Scene {
     button.setInteractive({ useHandCursor: true });
     text.setInteractive({ useHandCursor: true });
     sub.setInteractive({ useHandCursor: true });
-    button.on("pointerdown", callback);
-    text.on("pointerdown", callback);
-    sub.on("pointerdown", callback);
+    button.on("pointerdown", () => { audioSystem.play("click"); callback(); });
+    text.on("pointerdown", () => { audioSystem.play("click"); callback(); });
+    sub.on("pointerdown", () => { audioSystem.play("click"); callback(); });
     capture?.(text);
   }
 
@@ -507,8 +631,8 @@ class GameScene extends Phaser.Scene {
     }).setOrigin(0.5);
     button.setInteractive({ useHandCursor: true });
     text.setInteractive({ useHandCursor: true });
-    button.on("pointerdown", callback);
-    text.on("pointerdown", callback);
+    button.on("pointerdown", () => { audioSystem.play("click"); callback(); });
+    text.on("pointerdown", () => { audioSystem.play("click"); callback(); });
   }
 
   private seedCoinPile(): void {
@@ -525,11 +649,20 @@ class GameScene extends Phaser.Scene {
     this.matter.world.on("collisionstart", (event: Phaser.Physics.Matter.Events.CollisionStartEvent) => {
       event.pairs.forEach((pair) => {
         const bodies = [pair.bodyA, pair.bodyB];
-        const sensorBody = bodies.find((body) => body.label === "lucky-sensor");
         const coinBody = bodies.find((body) => body.label === "coin");
-        if (!sensorBody || !coinBody) return;
+        if (!coinBody) return;
         const coin = this.coins.find((item) => item.body === coinBody);
         if (!coin) return;
+
+        const otherBody = bodies.find((body) => body !== coinBody);
+        const age = this.time.now - ((coin.getData("spawnedAt") as number | undefined) ?? this.time.now);
+        if (!coin.getData("seeded") && !coin.getData("dropSounded") && otherBody?.label !== "lucky-sensor" && age > 120) {
+          coin.setData("dropSounded", true);
+          audioSystem.play("coinDrop");
+        }
+
+        const sensorBody = bodies.find((body) => body.label === "lucky-sensor");
+        if (!sensorBody) return;
         if (coin.getData("seeded")) return;
         const data = coin.getData("mechanismTriggered") as boolean | undefined;
         if (data || this.mechanismBusy) return;
@@ -544,12 +677,17 @@ class GameScene extends Phaser.Scene {
     const cooldown = coinCooldown(this.save.upgrades.cooldown);
     if (now - this.lastDrop < cooldown) return;
     if (this.save.coin <= 0) {
+      audioSystem.play("error");
       this.flashTip("Coin 不足：等待恢复或使用补给");
       return;
     }
     this.lastDrop = now;
     this.save.coin -= 1;
     increaseMission(this.save, "spawnCoin", 1);
+
+    audioSystem.play("coinSpawn");
+    vibratePreset("coinDrop");
+    this.particleSystem.spawnCoinSparkle(spawnX, 198);
 
     const x = Phaser.Math.Clamp(spawnX + Phaser.Math.Between(-6, 6), FEEDER_LEFT, FEEDER_RIGHT);
     const coin = this.createPhysicalCoin(x, 232);
@@ -563,15 +701,15 @@ class GameScene extends Phaser.Scene {
       shape: { type: "circle", radius: COIN_BODY_RADIUS },
       restitution: 0.05,
       friction: 0.14,
-      frictionAir: 0.03,
-      density: 0.0022,
+      frictionAir: 0.025,
+      density: 0.002,
       slop: 0.02,
       label: "coin"
     });
     coin.setScale(COIN_DISPLAY_SCALE);
     coin.setDepth(5);
     coin.setBounce(0.05);
-    coin.setFriction(0.15, 0.03, 0.15);
+    coin.setFriction(0.14, 0.025, 0.14);
     coin.setVelocity(0, 0.58);
     coin.setAngularVelocity(Phaser.Math.FloatBetween(-0.08, 0.08));
     coin.setData("spawnedAt", this.time.now);
@@ -629,10 +767,19 @@ class GameScene extends Phaser.Scene {
       const autoCollectActive = this.save.buffs.autoCollectUntil > Date.now();
       if (y < 608 && !(autoCollectActive && y > 560)) continue;
       let reward = Phaser.Math.Between(1, 3);
-      if (x > CENTER_SLOT_LEFT && x < CENTER_SLOT_RIGHT) {
+      const isCenter = x > CENTER_SLOT_LEFT && x < CENTER_SLOT_RIGHT;
+      if (isCenter) {
         reward += centerReward(this.save.upgrades.slot);
         increaseMission(this.save, "hitCenter", 1);
         this.flashTip("中央修复槽命中：Gold 增加");
+        audioSystem.play("centerHit");
+        vibratePreset("centerHit");
+        this.particleSystem.spawnCenterHit(x, y);
+        this.cameras.main.shake(120, 0.004);
+      } else {
+        audioSystem.play("coinCollect");
+        vibratePreset("coinCollect");
+        this.particleSystem.spawnCollect(x, y);
       }
       if (this.save.buffs.goldBoostUntil > Date.now()) {
         reward = Math.ceil(reward * 1.5);
@@ -640,6 +787,7 @@ class GameScene extends Phaser.Scene {
       this.save.gold += reward;
       increaseMission(this.save, "earnGold", reward);
       this.spawnRewardText(x, Math.min(y - 16, 580), `+${reward}`);
+      this.particleSystem.spawnGoldFlyToHud(x, y, 33, 104);
       this.recycleCoin(coin);
       this.coins.splice(i, 1);
     }
@@ -647,11 +795,15 @@ class GameScene extends Phaser.Scene {
 
   private buyUpgrade(id: UpgradeId): void {
     if (tryUpgrade(this.save, id)) {
+      audioSystem.play("upgrade");
+      vibratePreset("upgrade");
+      this.particleSystem.spawnUpgradeBurst(386, 250);
       this.flashTip("升级完成");
       this.persist();
       if (this.panel) this.showUpgradePanel();
       return;
     }
+    audioSystem.play("error");
     this.flashTip("Gold 不足或已满级");
   }
 
@@ -668,6 +820,9 @@ class GameScene extends Phaser.Scene {
   private triggerMechanism(): void {
     this.mechanismBusy = true;
     this.save.mechanismTriggers += 1;
+    audioSystem.play("mechanismRoll");
+    vibratePreset("mechanismTrigger");
+    this.particleSystem.spawnDuckFlash(this.duckX, DUCK_Y);
     this.tweens.add({
       targets: this.duckSprite,
       scale: DUCK_HIT_SCALE,
@@ -725,17 +880,24 @@ class GameScene extends Phaser.Scene {
   }
 
   private applyReelOutcome(outcome: ReelOutcome): void {
+    audioSystem.play("mechanismStop");
     if (outcome.kind === "gold") {
       this.save.gold += outcome.gold;
       increaseMission(this.save, "earnGold", outcome.gold);
       this.spawnRewardText(WIDTH / 2, 350, `+${outcome.gold}G`);
       this.flashTip(`三列 ${outcome.gold} 对齐：Gold +${outcome.gold}`);
+      this.particleSystem.spawnCenterHit(WIDTH / 2, 350);
+      audioSystem.play("centerHit");
+      vibratePreset("centerHit");
+      this.cameras.main.shake(150, 0.005);
       return;
     }
 
     this.save.giftPacks[outcome.tier] += 1;
     this.spawnGiftPackDrop(outcome.tier);
     this.flashTip(`${GIFT_PACKS[outcome.tier].label} 掉落：到图鉴用 Gold 拼图`);
+    audioSystem.play("giftPack");
+    vibratePreset("giftPack");
   }
 
   private spawnGiftPackDrop(tier: GiftTier): void {
@@ -754,7 +916,11 @@ class GameScene extends Phaser.Scene {
       y: 546,
       duration: 620,
       ease: "Bounce.easeOut",
+      onUpdate: (_tween: Phaser.Tweens.Tween, _target: unknown, _key: string, _value: number, _previous: number, _progress: number, _elapsed: number, _repeat: number, _repeatCount: number, _data: unknown) => {
+        this.particleSystem.spawnGiftTrail(WIDTH / 2, (box as Phaser.GameObjects.Rectangle).y, pack.color);
+      },
       onComplete: () => {
+        this.particleSystem.spawnCollect(WIDTH / 2, 546, pack.color, 8);
         this.time.delayedCall(650, () => {
           box.destroy();
           ribbonV.destroy();
@@ -852,15 +1018,15 @@ class GameScene extends Phaser.Scene {
     this.showInfoPanel(
       "补给中心",
       [
-        "观看维护短片可获得 Coin 补给",
+        "观看维护短片后发放 Coin 补给",
         "Coin 只用于本局投币，不兑换现金或实物",
         `自然恢复上限 ${NATURAL_COIN_CAP}，补给临时上限 ${SUPPLY_COIN_CAP}`,
-        "建议优先使用标准补给，避免一次性溢出"
+        "激励视频模拟 2.5 秒倒计时，完成后自动入账"
       ],
       [
-        { label: "+10C", action: () => this.claimSupply(10) },
-        { label: "+30C", action: () => this.claimSupply(30) },
-        { label: "+50C", action: () => this.claimSupply(50) }
+        { label: "看+10C", action: () => this.claimSupplyFromAd(10) },
+        { label: "看+30C", action: () => this.claimSupplyFromAd(30) },
+        { label: "看+50C", action: () => this.claimSupplyFromAd(50) }
       ]
     );
   }
@@ -884,10 +1050,12 @@ class GameScene extends Phaser.Scene {
   private openGiftPack(tier: GiftTier): void {
     const pack = GIFT_PACKS[tier];
     if (this.save.giftPacks[tier] <= 0) {
+      audioSystem.play("error");
       this.flashTip(`${pack.label} 数量不足，先砸中小黄鸭获取`);
       return;
     }
     if (this.save.gold < pack.costGold) {
+      audioSystem.play("error");
       this.flashTip(`Gold 不足：开启${pack.label}需要 ${pack.costGold}G`);
       return;
     }
@@ -895,21 +1063,78 @@ class GameScene extends Phaser.Scene {
     this.save.giftPacks[tier] -= 1;
     this.save.gold -= pack.costGold;
     this.save.fragments += pack.fragments;
+    audioSystem.play("giftPack");
+    this.particleSystem.spawnCollect(WIDTH / 2, 350, pack.color, 8);
     this.flashTip(`${pack.label} 已开启：拼图 +${pack.fragments}`);
     this.persist();
     this.showGalleryPanel();
   }
 
-  private claimSupply(amount: number): void {
-    this.save.coin = Math.min(SUPPLY_COIN_CAP, this.save.coin + amount);
-    this.flashTip(`补给完成：Coin +${amount}`);
+  private claimSupplyFromAd(amount: number): void {
+    if (this.adRewardPending) {
+      audioSystem.play("error");
+      this.flashTip("维护短片播放中，请稍候");
+      return;
+    }
+    this.adRewardPending = true;
+    audioSystem.play("click");
+    vibratePreset("click");
+    this.flashTip("维护短片播放中：2.5 秒", 900);
+    adSystem.showRewardedAd(
+      {
+        onProgress: (remainingMs) => {
+          if (remainingMs > 0) this.flashTip(`维护短片播放中：${(remainingMs / 1000).toFixed(1)} 秒`, 900);
+        },
+        onReward: (reward) => {
+          this.applyAdReward(reward);
+        },
+        onClose: () => {
+          this.adRewardPending = false;
+          this.panel?.destroy();
+          this.panel = undefined;
+        },
+        onError: (msg) => {
+          this.adRewardPending = false;
+          audioSystem.play("error");
+          vibratePreset("error");
+          this.flashTip(msg);
+        }
+      },
+      { type: "coin", value: amount }
+    );
+  }
+
+  private applyAdReward(reward: AdReward): void {
+    const now = Date.now();
+    if (reward.type === "coin") {
+      const before = this.save.coin;
+      this.save.coin = Math.min(SUPPLY_COIN_CAP, this.save.coin + reward.value);
+      const gained = this.save.coin - before;
+      audioSystem.play("offline");
+      vibratePreset("coinCollect");
+      this.particleSystem.spawnCollect(68, 702, 0xffd34f, 10);
+      this.spawnRewardText(68, 674, `+${gained}C`);
+      this.flashTip(gained > 0 ? `补给完成：Coin +${gained}` : "Coin 已达到补给上限");
+      this.persist();
+      return;
+    }
+
+    const durationMs = Math.max(1, reward.duration ?? 60) * 1000;
+    const until = now + durationMs;
+    if (reward.type === "goldBoost") this.save.buffs.goldBoostUntil = Math.max(this.save.buffs.goldBoostUntil, until);
+    if (reward.type === "autoCollect") this.save.buffs.autoCollectUntil = Math.max(this.save.buffs.autoCollectUntil, until);
+    if (reward.type === "upgradeDiscount") this.save.buffs.upgradeDiscountUntil = Math.max(this.save.buffs.upgradeDiscountUntil, until);
+    if (reward.type === "skinDiscount") this.save.buffs.skinDiscountUntil = Math.max(this.save.buffs.skinDiscountUntil, until);
+    audioSystem.play("upgrade");
+    vibratePreset("upgrade");
+    this.particleSystem.spawnUpgradeBurst(WIDTH / 2, 104);
+    this.flashTip("广告奖励 Buff 已生效");
     this.persist();
-    this.panel?.destroy();
-    this.panel = undefined;
   }
 
   private toggleAutoDrop(): void {
     this.save.autoDrop = !this.save.autoDrop;
+    audioSystem.play("click");
     this.autoDropText?.setText(this.save.autoDrop ? "自动开" : "自动关");
     this.autoDropIndicator?.setFillStyle(this.save.autoDrop ? 0x7cff8b : 0xffffff, this.save.autoDrop ? 0.95 : 0.24);
     this.flashTip(this.save.autoDrop ? "自动投币已开启" : "自动投币已关闭");
@@ -977,20 +1202,25 @@ class GameScene extends Phaser.Scene {
 
   private claimMissionReward(id: MissionId): void {
     if (claimMission(this.save, id)) {
+      audioSystem.play("upgrade");
+      this.particleSystem.spawnCollect(386, 354, 0x7cff8b, 6);
       this.flashTip("任务奖励已领取：Gem 增加");
       this.persist();
       this.showMissionPanel();
       return;
     }
+    audioSystem.play("error");
     this.flashTip("任务尚未达成");
   }
 
   private buyOrEquipCoinSkin(id: SkinId): void {
     const result = buyOrEquipSkin(this.save, id);
     if (result === "locked") {
+      audioSystem.play("error");
       this.flashTip("Gem 不足，先完成每日任务");
       return;
     }
+    audioSystem.play(result === "bought" ? "giftPack" : "click");
     const skin = skins.find((item) => item.id === this.save.activeSkin) ?? skins[0];
     this.createCoinTexture(`coin-${skin.id}`, skin);
     this.coins.forEach((coin) => coin.setTexture(`coin-${skin.id}`));
@@ -1002,9 +1232,13 @@ class GameScene extends Phaser.Scene {
   private repairCurrentArcade(): void {
     const repaired = repairNextArcade(this.save);
     if (!repaired) {
+      audioSystem.play("error");
       this.flashTip("Gold 不足，继续修复材料收集");
       return;
     }
+    audioSystem.play("upgrade");
+    vibratePreset("upgrade");
+    this.particleSystem.spawnUpgradeBurst(WIDTH / 2, 600);
     this.flashTip(`已修复：${repaired.label}`);
     this.persist();
     this.showGalleryPanel();
@@ -1021,6 +1255,7 @@ class GameScene extends Phaser.Scene {
     this.save.gold += gold;
     this.save.coin += recoveredCoin;
     this.time.delayedCall(400, () => {
+      audioSystem.play("offline");
       this.showInfoPanel("离线收益", [`离线 ${Math.floor(elapsedSec / 60)} 分钟`, `Gold +${gold}`, `Coin +${recoveredCoin}`], []);
     });
   }
@@ -1040,10 +1275,12 @@ class GameScene extends Phaser.Scene {
     });
   }
 
-  private flashTip(text: string): void {
+  private flashTip(text: string, duration = 1800): void {
+    this.tipResetEvent?.remove(false);
     this.tip.setText(text);
-    this.time.delayedCall(1800, () => {
+    this.tipResetEvent = this.time.delayedCall(duration, () => {
       this.tip.setText(this.defaultTipText());
+      this.tipResetEvent = undefined;
     });
   }
 
@@ -1076,7 +1313,7 @@ const config: Phaser.Types.Core.GameConfig = {
   physics: {
     default: "matter",
     matter: {
-      gravity: { x: 0, y: 0.18 },
+      gravity: { x: 0, y: 1.0 },
       debug: false,
       enableSleeping: true
     }

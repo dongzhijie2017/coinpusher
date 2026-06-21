@@ -66,3 +66,49 @@ export interface ArcadeGoal {
   description: string;
   color: number;
 }
+
+// ===== 新系统类型 =====
+
+export type SoundType =
+  | "coinDrop"
+  | "coinSpawn"
+  | "coinCollect"
+  | "centerHit"
+  | "mechanismRoll"
+  | "mechanismStop"
+  | "upgrade"
+  | "error"
+  | "giftPack"
+  | "offline"
+  | "click";
+
+export interface ParticleConfig {
+  x: number;
+  y: number;
+  color: number;
+  count?: number;
+  speed?: number;
+  lifetime?: number;
+  gravity?: number;
+}
+
+export interface AdReward {
+  type: "coin" | "goldBoost" | "autoCollect" | "upgradeDiscount" | "skinDiscount";
+  value: number;
+  duration?: number; // seconds, for buffs
+}
+
+export interface TutorialStepConfig {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  condition?: (save: PlayerSave) => boolean;
+}
+
+export interface VibrationPattern {
+  duration: number;
+  intensity?: "light" | "medium" | "heavy";
+}
