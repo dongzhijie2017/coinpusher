@@ -1,39 +1,39 @@
 import type { TutorialStepConfig } from "../types";
 
-const TUTORIAL_KEY = "coin-pusher-tutorial-v1";
+const TUTORIAL_KEY = "coin-pusher-tutorial-v2";
 
 export const tutorialSteps: TutorialStepConfig[] = [
   {
     id: "welcome",
-    text: "欢迎来到街机修复计划！\n点击推币按钮投放硬币",
+    text: "先看顶部摆臂左右移动，\n点击按钮会按当前角度出币",
     x: 215,
-    y: 694,
+    y: 254,
+    width: 214,
+    height: 112
+  },
+  {
+    id: "first_coin",
+    text: "点击推币投放硬币，\n金币会先碰导片和上方柱点",
+    x: 215,
+    y: 702,
     width: 164,
     height: 58
   },
   {
-    id: "first_coin",
-    text: "硬币会落入推币台，\n推板将它们推向边缘",
-    x: 215,
-    y: 480,
-    width: 300,
-    height: 200
-  },
-  {
     id: "duck_sensor",
-    text: "注意中间移动的小黄鸭！\n硬币砸中它会触发机关检索",
+    text: "小黄鸭沿底部轨道移动，\n新投金币碰到它会触发机关滚动",
     x: 215,
-    y: 466,
-    width: 120,
-    height: 60
+    y: 486,
+    width: 142,
+    height: 74
   },
   {
     id: "center_slot",
-    text: "中间宽槽是中央修复槽，\n掉进去收益更高！",
+    text: "底部发亮的是中央奖励槽，\n推下去落中间收益更高",
     x: 215,
-    y: 644,
-    width: 130,
-    height: 54
+    y: 646,
+    width: 166,
+    height: 58
   },
   {
     id: "upgrade",

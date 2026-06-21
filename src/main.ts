@@ -31,8 +31,8 @@ const NATURAL_COIN_CAP = 50;
 const SUPPLY_COIN_CAP = 80;
 const DROP_LINE_Y = 634;
 const AUTO_COLLECT_LINE_Y = 596;
-const CENTER_SLOT_LEFT = 154;
-const CENTER_SLOT_RIGHT = 276;
+const CENTER_SLOT_LEFT = 132;
+const CENTER_SLOT_RIGHT = 298;
 const PUSHER_MIN_Y = 510;
 const PUSHER_MAX_Y = 548;
 const FEEDER_LEFT = 132;
@@ -40,7 +40,7 @@ const FEEDER_RIGHT = 298;
 const DUCK_LEFT = 122;
 const DUCK_RIGHT = 308;
 const DUCK_Y = 486;
-const DUCK_HIT_Y = 466;
+const DUCK_HIT_Y = 486;
 const DUCK_SCALE = 0.82;
 const DUCK_HIT_SCALE = 0.98;
 const COIN_BODY_RADIUS = 14;
@@ -49,6 +49,14 @@ const COIN_DISPLAY_SCALE = 0.46;
 type ReelOutcome =
   | { kind: "gold"; gold: 80 | 100 | 120; label: string; color: number; weight: number }
   | { kind: "gift"; tier: GiftTier; multiplier: 5 | 10 | 14; label: string; color: number; weight: number };
+
+type QaStats = {
+  feeder: number;
+  peg: number;
+  duck: number;
+  center: number;
+  collect: number;
+};
 
 const GIFT_PACKS: Record<GiftTier, { label: string; multiplier: 5 | 10 | 14; costGold: number; fragments: number; color: number }> = {
   gift5: { label: "5倍礼盒", multiplier: 5, costGold: 80, fragments: 1, color: 0xf7c04a },
@@ -87,6 +95,13 @@ class GameScene extends Phaser.Scene {
   private dropGuide!: Phaser.GameObjects.Rectangle;
   private dropHead!: Phaser.GameObjects.Rectangle;
   private dropGlow!: Phaser.GameObjects.Arc;
+  private dropPivot!: Phaser.GameObjects.Arc;
+  private dropArmLeft!: Phaser.GameObjects.Rectangle;
+  private dropArmRight!: Phaser.GameObjects.Rectangle;
+  private dropNozzle!: Phaser.GameObjects.Rectangle;
+  private dropTrackMarker!: Phaser.GameObjects.Rectangle;
+  private feederLeftBody!: MatterJS.BodyType;
+  private feederRightBody!: MatterJS.BodyType;
   private feederX = WIDTH / 2;
   private feederDirection = 1;
   private duckX = WIDTH / 2;
@@ -102,7 +117,12 @@ class GameScene extends Phaser.Scene {
   private tipResetEvent?: Phaser.Time.TimerEvent;
   private adRewardPending = false;
   private collisionHandler?: (event: Phaser.Physics.Matter.Events.CollisionStartEvent) => void;
+  private collisionActiveHandler?: (event: Phaser.Physics.Matter.Events.CollisionActiveEvent) => void;
   private sceneCleanedUp = false;
+  private qaMode = false;
+  private qaText?: Phaser.GameObjects.Text;
+  private qaDuckHitbox?: Phaser.GameObjects.Rectangle;
+  private qaStats: QaStats = { feeder: 0, peg: 0, duck: 0, center: 0, collect: 0 };
 
   constructor() {
     super("game");
@@ -110,6 +130,7 @@ class GameScene extends Phaser.Scene {
 
   create(): void {
     this.save = loadSave();
+    this.qaMode = new URLSearchParams(window.location.search).has("qa");
     this.applyOfflineProgress();
     this.matter.world.setBounds(54, 104, WIDTH - 108, 582, 32, true, true, false, false);
     this.matter.world.engine.positionIterations = 8;
@@ -132,6 +153,7 @@ class GameScene extends Phaser.Scene {
     this.seedCoinPile();
     this.startAmbientEffects();
     this.showTutorialIfNeeded();
+    this.startQaRunIfNeeded();
 
     this.time.addEvent({
       delay: 60000,
@@ -171,9 +193,11 @@ class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     this.updateFeeder(delta);
     this.updateDuck(delta);
+    this.checkLuckySensorHits();
     this.updatePusher(delta);
     this.checkDrops();
     this.updateHud();
+    this.updateQaText();
   }
 
   private createTextures(): void {
@@ -256,34 +280,63 @@ class GameScene extends Phaser.Scene {
     this.add.rectangle(108, 394, 10, 314, 0xffffff, 0.13).setAngle(12);
     this.add.rectangle(WIDTH - 108, 394, 10, 314, 0xffffff, 0.1).setAngle(-12);
 
-    this.add.rectangle(WIDTH / 2, 199, 176, 24, 0x4b1020, 0.96).setStrokeStyle(2, 0xffd36e);
-    this.add.text(WIDTH / 2, 196, "摆臂出币口", {
+    this.add.rectangle(WIDTH / 2, 198, 190, 24, 0x4b1020, 0.96).setStrokeStyle(2, 0xffd36e);
+    this.add.text(WIDTH / 2, 196, "看摆臂角度出币", {
       color: "#fff1c7",
       fontSize: "11px",
       fontStyle: "700"
     }).setOrigin(0.5).setDepth(9);
-    this.dropHead = this.add.rectangle(this.feederX, 216, 54, 12, 0xf8e68d, 0.98).setStrokeStyle(2, 0xffffff).setDepth(8);
-    this.dropGuide = this.add.rectangle(this.feederX, 246, 7, 48, 0xffd84d, 0.96).setStrokeStyle(2, 0xfff2a8).setDepth(8);
-    this.dropGlow = this.add.circle(this.feederX, 274, 6, 0xfff2a8, 0.95).setDepth(9);
+    this.add.rectangle(WIDTH / 2, 214, FEEDER_RIGHT - FEEDER_LEFT + 48, 3, 0xffe58a, 0.36).setDepth(7);
+    this.dropTrackMarker = this.add.rectangle(this.feederX, 214, 36, 5, 0xffffff, 0.74).setStrokeStyle(1, 0xffd34f).setDepth(10);
+    this.dropPivot = this.add.circle(this.feederX, 224, 13, 0xffdf63, 0.98).setStrokeStyle(3, 0xfff7c0).setDepth(11);
+    this.dropHead = this.add.rectangle(this.feederX, 224, 32, 14, 0xffd34f, 0.98).setStrokeStyle(2, 0xffffff).setDepth(12);
+    this.dropArmLeft = this.add.rectangle(this.feederX - 18, 258, 12, 78, 0xffdf63, 0.98).setStrokeStyle(2, 0xfff7c0).setDepth(10);
+    this.dropArmRight = this.add.rectangle(this.feederX + 18, 258, 12, 78, 0xffdf63, 0.98).setStrokeStyle(2, 0xfff7c0).setDepth(10);
+    this.dropGuide = this.add.rectangle(this.feederX, 294, 34, 7, 0xfff2a8, 0.94).setStrokeStyle(2, 0xffffff).setDepth(10);
+    this.dropNozzle = this.add.rectangle(this.feederX, 302, 22, 7, 0xffb829, 0.96).setStrokeStyle(2, 0xfff2a8).setDepth(11);
+    this.dropGlow = this.add.circle(this.feederX, 308, 7, 0xfff2a8, 0.95).setDepth(12);
+    this.feederLeftBody = this.matter.add.rectangle(this.feederX - 18, 258, 12, 78, {
+      isStatic: true,
+      angle: Phaser.Math.DegToRad(-18),
+      label: "feeder-arm",
+      friction: 0.01,
+      restitution: 0.88
+    });
+    this.feederRightBody = this.matter.add.rectangle(this.feederX + 18, 258, 12, 78, {
+      isStatic: true,
+      angle: Phaser.Math.DegToRad(18),
+      label: "feeder-arm",
+      friction: 0.01,
+      restitution: 0.88
+    });
     this.createGoldDeflectors();
 
     this.createStaticCoinBed();
     this.add.rectangle(WIDTH / 2, 576, 286, 46, 0xe6edf2, 0.96).setStrokeStyle(3, 0xffdf63).setDepth(3);
-    this.add.rectangle(WIDTH / 2, 605, 310, 24, 0xf8cf63, 0.98).setStrokeStyle(2, 0xfff2a8).setDepth(4);
-    this.add.rectangle(WIDTH / 2, 644, 130, 54, 0xf7f7f2).setStrokeStyle(3, 0x25344a).setDepth(8);
-    this.add.text(WIDTH / 2, 644, "中央槽", {
+    this.add.rectangle(WIDTH / 2, 606, 310, 20, 0xf8cf63, 0.98).setStrokeStyle(2, 0xfff2a8).setDepth(4);
+    this.add.rectangle(WIDTH / 2, 622, 170, 16, 0xffffff, 0.26).setStrokeStyle(2, 0xfff2a8, 0.56).setDepth(7);
+    this.add.rectangle(139, 625, 10, 48, 0xffdf63, 0.98).setAngle(-24).setStrokeStyle(2, 0xfff7c0).setDepth(8);
+    this.add.rectangle(291, 625, 10, 48, 0xffdf63, 0.98).setAngle(24).setStrokeStyle(2, 0xfff7c0).setDepth(8);
+    this.add.rectangle(WIDTH / 2, 646, CENTER_SLOT_RIGHT - CENTER_SLOT_LEFT, 58, 0xfff8df).setStrokeStyle(4, 0xffdf63).setDepth(8);
+    this.add.rectangle(WIDTH / 2, 646, CENTER_SLOT_RIGHT - CENTER_SLOT_LEFT - 18, 30, 0xffffff, 0.7).setStrokeStyle(2, 0x25344a, 0.82).setDepth(9);
+    this.add.text(WIDTH / 2, 642, "中央奖励槽", {
       color: "#07315f",
-      fontSize: "13px",
+      fontSize: "14px",
       fontStyle: "700"
     }).setOrigin(0.5).setDepth(9);
-    this.add.rectangle(103, 644, 78, 54, 0x0067cb).setStrokeStyle(3, 0x6ed7ff).setDepth(8);
-    this.add.rectangle(WIDTH - 103, 644, 78, 54, 0x0067cb).setStrokeStyle(3, 0x6ed7ff).setDepth(8);
-    this.add.text(103, 644, "回收", {
+    this.add.text(WIDTH / 2, 658, "高收益", {
+      color: "#37618d",
+      fontSize: "10px",
+      fontStyle: "700"
+    }).setOrigin(0.5).setDepth(9);
+    this.add.rectangle(90, 646, 64, 54, 0x0067cb).setStrokeStyle(3, 0x6ed7ff).setDepth(8);
+    this.add.rectangle(WIDTH - 90, 646, 64, 54, 0x0067cb).setStrokeStyle(3, 0x6ed7ff).setDepth(8);
+    this.add.text(90, 646, "回收", {
       color: "#d8f7ff",
       fontSize: "11px",
       fontStyle: "700"
     }).setOrigin(0.5).setDepth(9);
-    this.add.text(WIDTH - 103, 644, "回收", {
+    this.add.text(WIDTH - 90, 646, "回收", {
       color: "#d8f7ff",
       fontSize: "11px",
       fontStyle: "700"
@@ -291,6 +344,20 @@ class GameScene extends Phaser.Scene {
 
     this.matter.add.rectangle(72, 414, 18, 512, { isStatic: true, label: "left-wall" });
     this.matter.add.rectangle(WIDTH - 72, 414, 18, 512, { isStatic: true, label: "right-wall" });
+    this.matter.add.rectangle(139, 625, 10, 48, {
+      isStatic: true,
+      angle: Phaser.Math.DegToRad(-24),
+      label: "center-funnel",
+      friction: 0.02,
+      restitution: 0.18
+    });
+    this.matter.add.rectangle(291, 625, 10, 48, {
+      isStatic: true,
+      angle: Phaser.Math.DegToRad(24),
+      label: "center-funnel",
+      friction: 0.02,
+      restitution: 0.18
+    });
 
     const aimZone = this.add.zone(WIDTH / 2, 208, 286, 96);
     aimZone.setInteractive({ useHandCursor: true });
@@ -301,41 +368,26 @@ class GameScene extends Phaser.Scene {
 
   private createGoldDeflectors(): void {
     [
-      { x: 184, y: 270, angle: -20 },
-      { x: 246, y: 270, angle: 20 }
-    ].forEach((guide) => {
-      this.add.rectangle(guide.x, guide.y, 10, 58, 0xf6d24b)
-        .setStrokeStyle(2, 0xfff2a8)
-        .setAngle(guide.angle)
-        .setDepth(10);
-      this.matter.add.rectangle(guide.x, guide.y, 10, 58, {
-        isStatic: true,
-        angle: Phaser.Math.DegToRad(guide.angle),
-        label: "deflector",
-        friction: 0.02,
-        restitution: 0.82
-      });
-    });
-
-    [
-      { x: 150, y: 314 },
-      { x: 215, y: 314 },
-      { x: 280, y: 314 },
-      { x: 132, y: 438 },
-      { x: 174, y: 430 },
-      { x: 215, y: 438 },
-      { x: 256, y: 430 },
-      { x: 298, y: 438 }
+      { x: 126, y: 330 },
+      { x: 170, y: 326 },
+      { x: 215, y: 330 },
+      { x: 260, y: 326 },
+      { x: 304, y: 330 },
+      { x: 128, y: 444 },
+      { x: 172, y: 436 },
+      { x: 215, y: 444 },
+      { x: 258, y: 436 },
+      { x: 302, y: 444 }
     ].forEach((peg, index) => {
-      this.add.circle(peg.x, peg.y, 7, 0xd8e4f2, 0.96)
+      this.add.circle(peg.x, peg.y, 9, 0xd8e4f2, 0.98)
         .setStrokeStyle(2, 0xffffff, 0.9)
-        .setDepth(10);
+        .setDepth(14);
       this.add.image(peg.x, peg.y, `coin-${this.save.activeSkin}`)
         .setScale(0.13)
         .setAngle(index * 31)
         .setAlpha(0.62)
-        .setDepth(11);
-      this.matter.add.circle(peg.x, peg.y, 9, {
+        .setDepth(15);
+      this.matter.add.circle(peg.x, peg.y, 16, {
         isStatic: true,
         label: "peg",
         friction: 0.01,
@@ -425,6 +477,7 @@ class GameScene extends Phaser.Scene {
   }
 
   private showTutorialIfNeeded(): void {
+    if (this.qaMode) return;
     if (tutorialSystem.isAllDone()) return;
     tutorialSystem.start();
     this.showNextTutorialStep();
@@ -454,8 +507,8 @@ class GameScene extends Phaser.Scene {
     const hasSpaceBelow = step.y + step.height / 2 + 96 < HEIGHT;
     const textY = hasSpaceBelow
       ? step.y + step.height / 2 + 42
-      : Math.max(76, step.y - step.height / 2 - 62);
-    const nextY = Math.min(HEIGHT - 34, textY + 52);
+      : Math.max(96, step.y - step.height / 2 - 76);
+    const nextY = hasSpaceBelow ? Math.min(HEIGHT - 34, textY + 52) : Math.max(42, textY - 48);
 
     // 提示文字框
     const textBg = this.add.rectangle(WIDTH / 2, textY, 340, 60, 0x132b40, 0.96).setStrokeStyle(2, 0xffd34f);
@@ -517,10 +570,12 @@ class GameScene extends Phaser.Scene {
     this.duckSprite = this.add.image(WIDTH / 2, DUCK_Y, "lucky-sensor")
       .setScale(DUCK_SCALE)
       .setDepth(9);
-    this.luckySensorBody = this.matter.add.circle(WIDTH / 2, DUCK_HIT_Y, 34, {
-      isSensor: true,
+    this.luckySensorBody = this.matter.add.rectangle(WIDTH / 2, DUCK_HIT_Y, 78, 42, {
+      isSensor: false,
       isStatic: true,
-      label: "lucky-sensor"
+      label: "lucky-sensor",
+      friction: 0.02,
+      restitution: 0.72
     });
   }
 
@@ -540,20 +595,20 @@ class GameScene extends Phaser.Scene {
       fontStyle: "700"
     }).setOrigin(1, 0.5).setDepth(15);
 
-    this.add.rectangle(WIDTH / 2, 628, 332, 48, 0x653e29, 0.24).setStrokeStyle(1, 0xffe0a4, 0.32);
-    this.tip = this.add.text(WIDTH / 2, 644, "看准顶部摆臂时机，点击推币", {
+    this.add.rectangle(WIDTH / 2, 174, 310, 22, 0x4b1020, 0.62).setStrokeStyle(1, 0xffd36e, 0.5).setDepth(14);
+    this.tip = this.add.text(WIDTH / 2, 174, "看准顶部摆臂，点击推币", {
       color: "#fff5d6",
-      fontSize: "12px",
+      fontSize: "11px",
       fontStyle: "700"
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(15);
 
-    this.goalText = this.add.text(WIDTH / 2, 620, "", {
+    this.goalText = this.add.text(WIDTH / 2, 616, "", {
       color: "#fff5d6",
-      fontSize: "12px",
+      fontSize: "11px",
       fontStyle: "700"
-    }).setOrigin(0.5);
-    this.add.rectangle(WIDTH / 2, 664, 306, 12, 0x44291f, 0.9).setStrokeStyle(1, 0xffe0a4, 0.55);
-    this.goalBar = this.add.rectangle(62, 664, 0, 8, 0xffd34f).setOrigin(0, 0.5);
+    }).setOrigin(0.5).setDepth(16);
+    this.add.rectangle(WIDTH / 2, 674, 306, 12, 0x44291f, 0.9).setStrokeStyle(1, 0xffe0a4, 0.55).setDepth(14);
+    this.goalBar = this.add.rectangle(62, 674, 0, 8, 0xffd34f).setOrigin(0, 0.5).setDepth(15);
   }
 
   private createControls(): void {
@@ -679,6 +734,7 @@ class GameScene extends Phaser.Scene {
         if (!coin) return;
 
         const otherBody = bodies.find((body) => body !== coinBody);
+        if (this.qaMode) this.recordQaContact(pair.bodyA, pair.bodyB);
         const age = this.time.now - ((coin.getData("spawnedAt") as number | undefined) ?? this.time.now);
         if (!coin.getData("seeded") && !coin.getData("dropSounded") && otherBody?.label !== "lucky-sensor" && age > 120) {
           coin.setData("dropSounded", true);
@@ -694,7 +750,29 @@ class GameScene extends Phaser.Scene {
         this.triggerMechanism();
       });
     };
+    this.collisionActiveHandler = (event: Phaser.Physics.Matter.Events.CollisionActiveEvent) => {
+      if (!this.qaMode) return;
+      event.pairs.forEach((pair) => this.recordQaContact(pair.bodyA, pair.bodyB));
+    };
     this.matter.world.on("collisionstart", this.collisionHandler);
+    this.matter.world.on("collisionactive", this.collisionActiveHandler);
+  }
+
+  private recordQaContact(bodyA: MatterJS.BodyType, bodyB: MatterJS.BodyType): void {
+    const bodies = [bodyA, bodyB];
+    const coinBody = bodies.find((body) => body.label === "coin");
+    if (!coinBody) return;
+    const coin = this.coins.find((item) => item.body === coinBody);
+    if (!coin?.getData("qa")) return;
+    const otherBody = bodies.find((body) => body !== coinBody);
+    if (!otherBody) return;
+
+    const key = `qa-hit-${otherBody.label}`;
+    if (coin.getData(key)) return;
+    coin.setData(key, true);
+    if (otherBody.label === "feeder-arm") this.qaStats.feeder += 1;
+    if (otherBody.label === "peg") this.qaStats.peg += 1;
+    if (otherBody.label === "lucky-sensor") this.qaStats.duck += 1;
   }
 
   private bindSceneLifecycle(): void {
@@ -710,12 +788,61 @@ class GameScene extends Phaser.Scene {
       this.matter.world.off("collisionstart", this.collisionHandler);
       this.collisionHandler = undefined;
     }
+    if (this.collisionActiveHandler) {
+      this.matter.world.off("collisionactive", this.collisionActiveHandler);
+      this.collisionActiveHandler = undefined;
+    }
     this.tipResetEvent?.remove(false);
     this.ambientTimer?.remove(false);
     this.panel?.destroy();
     this.panel = undefined;
     this.clearTutorialOverlay();
     this.particleSystem.destroy();
+  }
+
+  private startQaRunIfNeeded(): void {
+    if (!this.qaMode) return;
+
+    this.qaText = this.add.text(22, 100, "", {
+      color: "#ffffff",
+      fontSize: "10px",
+      fontStyle: "700",
+      backgroundColor: "rgba(0,0,0,0.55)",
+      padding: { x: 6, y: 4 }
+    }).setDepth(80);
+    this.qaDuckHitbox = this.add.rectangle(this.duckX, DUCK_HIT_Y, 78, 42, 0x7cff8b, 0.18)
+      .setStrokeStyle(1, 0x7cff8b, 0.65)
+      .setDepth(20);
+
+    const qaDrops = [170, 215, 260, 126, 304, 172, 258, 215, 150, 280, 215, 190, 240, 215, 215, 215];
+    qaDrops.forEach((x, index) => {
+      this.time.delayedCall(350 + index * 360, () => this.spawnQaCoin(x));
+    });
+    [0, 1, 2].forEach((_, index) => {
+      this.time.delayedCall(6350 + index * 360, () => this.spawnQaCoinAt(this.duckX, DUCK_Y - 72, 0, 1.25));
+    });
+    this.time.delayedCall(7600, () => this.flashTip("QA 测试完成：检查左上角碰撞计数", 2600));
+  }
+
+  private spawnQaCoin(x: number): void {
+    const lateral = ((x - WIDTH / 2) / ((FEEDER_RIGHT - FEEDER_LEFT) / 2)) * 0.42;
+    this.spawnQaCoinAt(x, 314, lateral, 1.05);
+  }
+
+  private spawnQaCoinAt(x: number, y: number, velocityX: number, velocityY: number): void {
+    const coin = this.createPhysicalCoin(x, y);
+    coin.setVelocity(velocityX, velocityY);
+    coin.setAngularVelocity(Phaser.Math.FloatBetween(-0.18, 0.18));
+    coin.setData("qa", true);
+  }
+
+  private updateQaText(): void {
+    if (!this.qaMode || !this.qaText) return;
+    this.qaText.setText(
+      `QA collisions\nfeeder ${this.qaStats.feeder}\npeg ${this.qaStats.peg}\nduck ${this.qaStats.duck}\ncenter ${this.qaStats.center}\ncollect ${this.qaStats.collect}`
+    );
+    this.qaDuckHitbox?.setPosition(this.duckX, DUCK_HIT_Y);
+    (window as unknown as { __coinPusherQaStats: QaStats }).__coinPusherQaStats = { ...this.qaStats };
   }
 
   private dropCoin(spawnX = this.feederX): void {
@@ -733,12 +860,12 @@ class GameScene extends Phaser.Scene {
 
     audioSystem.play("coinSpawn");
     vibratePreset("coinDrop");
-    this.particleSystem.spawnCoinSparkle(spawnX, 216);
+    this.particleSystem.spawnCoinSparkle(spawnX, 306);
 
     const x = Phaser.Math.Clamp(spawnX + Phaser.Math.Between(-6, 6), FEEDER_LEFT, FEEDER_RIGHT);
-    const coin = this.createPhysicalCoin(x, 232);
+    const coin = this.createPhysicalCoin(x, 314);
     const lateralFromSwing = ((x - WIDTH / 2) / ((FEEDER_RIGHT - FEEDER_LEFT) / 2)) * 0.34;
-    coin.setVelocity(lateralFromSwing + this.feederDirection * 0.24, 0.92);
+    coin.setVelocity(lateralFromSwing + this.feederDirection * 0.24, 0.72);
     coin.setAngularVelocity(Phaser.Math.FloatBetween(-0.16, 0.16));
   }
 
@@ -753,7 +880,7 @@ class GameScene extends Phaser.Scene {
       label: "coin"
     });
     coin.setScale(COIN_DISPLAY_SCALE);
-    coin.setDepth(5);
+    coin.setDepth(13);
     coin.setBounce(0.05);
     coin.setFriction(0.14, 0.025, 0.14);
     coin.setVelocity(0, 0.58);
@@ -775,11 +902,26 @@ class GameScene extends Phaser.Scene {
     this.spawnX = this.feederX;
 
     const offset = (this.feederX - WIDTH / 2) / ((FEEDER_RIGHT - FEEDER_LEFT) / 2);
-    const angle = offset * 17;
-    this.dropHead.setPosition(this.feederX, 216);
-    this.dropGuide.setPosition(this.feederX, 246);
-    this.dropGuide.setAngle(angle);
-    this.dropGlow.setPosition(this.feederX, 274);
+    const swingAngle = offset * 19;
+    const leftAngle = -18 + swingAngle * 0.36;
+    const rightAngle = 18 + swingAngle * 0.36;
+    this.dropTrackMarker.setPosition(this.feederX, 214);
+    this.dropPivot.setPosition(this.feederX, 224);
+    this.dropHead.setPosition(this.feederX, 224);
+    this.dropHead.setAngle(swingAngle * 0.22);
+    this.dropArmLeft.setPosition(this.feederX - 18, 258);
+    this.dropArmLeft.setAngle(leftAngle);
+    this.dropArmRight.setPosition(this.feederX + 18, 258);
+    this.dropArmRight.setAngle(rightAngle);
+    this.dropGuide.setPosition(this.feederX, 294);
+    this.dropGuide.setAngle(swingAngle * 0.16);
+    this.dropNozzle.setPosition(this.feederX, 304);
+    this.dropNozzle.setAngle(swingAngle);
+    this.dropGlow.setPosition(this.feederX, 314);
+    this.matter.body.setPosition(this.feederLeftBody, { x: this.feederX - 18, y: 258 });
+    this.matter.body.setAngle(this.feederLeftBody, Phaser.Math.DegToRad(leftAngle));
+    this.matter.body.setPosition(this.feederRightBody, { x: this.feederX + 18, y: 258 });
+    this.matter.body.setAngle(this.feederRightBody, Phaser.Math.DegToRad(rightAngle));
   }
 
   private updateDuck(delta: number): void {
@@ -789,6 +931,25 @@ class GameScene extends Phaser.Scene {
     this.duckX = Phaser.Math.Clamp(next, DUCK_LEFT, DUCK_RIGHT);
     this.duckSprite.setPosition(this.duckX, DUCK_Y);
     this.matter.body.setPosition(this.luckySensorBody, { x: this.duckX, y: DUCK_HIT_Y });
+  }
+
+  private checkLuckySensorHits(): void {
+    for (const coin of this.coins) {
+      if (coin.getData("seeded")) continue;
+      if (coin.getData("mechanismTriggered")) continue;
+      const withinDuckX = Math.abs(coin.x - this.duckX) < 48;
+      const withinDuckY = Math.abs(coin.y - DUCK_HIT_Y) < 32;
+      if (!withinDuckX || !withinDuckY) continue;
+
+      coin.setData("mechanismTriggered", true);
+      if (this.qaMode && !coin.getData("qa-hit-lucky-sensor")) {
+        coin.setData("qa-hit-lucky-sensor", true);
+        this.qaStats.duck += 1;
+      }
+      coin.setVelocity((coin.x - this.duckX) * 0.018, -0.86);
+      coin.setAngularVelocity(Phaser.Math.FloatBetween(-0.22, 0.22));
+      if (!this.mechanismBusy) this.triggerMechanism();
+    }
   }
 
   private updatePusher(delta: number): void {
@@ -815,6 +976,7 @@ class GameScene extends Phaser.Scene {
       let reward = Phaser.Math.Between(1, 3);
       const isCenter = x > CENTER_SLOT_LEFT && x < CENTER_SLOT_RIGHT;
       if (isCenter) {
+        if (this.qaMode) this.qaStats.center += 1;
         reward += centerReward(this.save.upgrades.slot);
         increaseMission(this.save, "hitCenter", 1);
         this.flashTip("中央修复槽命中：Gold 增加");
@@ -823,6 +985,7 @@ class GameScene extends Phaser.Scene {
         this.particleSystem.spawnCenterHit(x, y);
         this.cameras.main.shake(120, 0.004);
       } else {
+        if (this.qaMode) this.qaStats.collect += 1;
         audioSystem.play("coinCollect");
         vibratePreset("coinCollect");
         this.particleSystem.spawnCollect(x, y);
