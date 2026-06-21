@@ -29,16 +29,18 @@ const HEIGHT = 760;
 const MAX_COINS = 96;
 const NATURAL_COIN_CAP = 50;
 const SUPPLY_COIN_CAP = 80;
-const CENTER_SLOT_LEFT = 144;
-const CENTER_SLOT_RIGHT = 286;
-const PUSHER_MIN_Y = 524;
-const PUSHER_MAX_Y = 570;
+const DROP_LINE_Y = 634;
+const AUTO_COLLECT_LINE_Y = 596;
+const CENTER_SLOT_LEFT = 154;
+const CENTER_SLOT_RIGHT = 276;
+const PUSHER_MIN_Y = 510;
+const PUSHER_MAX_Y = 548;
 const FEEDER_LEFT = 132;
 const FEEDER_RIGHT = 298;
 const DUCK_LEFT = 122;
 const DUCK_RIGHT = 308;
 const DUCK_Y = 486;
-const DUCK_HIT_Y = 452;
+const DUCK_HIT_Y = 466;
 const DUCK_SCALE = 0.82;
 const DUCK_HIT_SCALE = 0.98;
 const COIN_BODY_RADIUS = 14;
@@ -109,7 +111,7 @@ class GameScene extends Phaser.Scene {
   create(): void {
     this.save = loadSave();
     this.applyOfflineProgress();
-    this.matter.world.setBounds(54, 104, WIDTH - 108, 535, 32, true, true, false, false);
+    this.matter.world.setBounds(54, 104, WIDTH - 108, 582, 32, true, true, false, false);
     this.matter.world.engine.positionIterations = 8;
     this.matter.world.engine.velocityIterations = 6;
     this.matter.world.engine.constraintIterations = 2;
@@ -228,13 +230,6 @@ class GameScene extends Phaser.Scene {
       fontSize: "23px",
       fontStyle: "700"
     }).setOrigin(0.5);
-    this.add.rectangle(WIDTH / 2, 78, 344, 24, 0x103b55, 0.9).setStrokeStyle(1, 0x2ec4b6);
-    this.add.text(WIDTH / 2, 78, "Coin 投币 · Gold 修复 · Gem 外观", {
-      color: "#d9fff7",
-      fontSize: "11px",
-      fontStyle: "700"
-    }).setOrigin(0.5);
-
     this.add.rectangle(WIDTH / 2, 359, 382, 520, 0xf5b642).setStrokeStyle(5, 0xffefb2);
     this.add.rectangle(WIDTH / 2, 361, 348, 492, 0x0a8cd3).setStrokeStyle(4, 0x65ddff);
     this.add.rectangle(48, 363, 30, 456, 0xf8cf63).setStrokeStyle(3, 0xfff1ab);
@@ -252,50 +247,52 @@ class GameScene extends Phaser.Scene {
       fontSize: "25px",
       fontStyle: "700"
     }).setOrigin(0.5);
-    this.add.rectangle(WIDTH / 2, 168, 268, 25, 0x9b1c2a, 0.9);
-    this.add.text(WIDTH / 2, 168, "机关检索只产出游戏内成长道具", {
-      color: "#ffe9b9",
-      fontSize: "12px",
-      fontStyle: "700"
-    }).setOrigin(0.5);
+    this.add.rectangle(WIDTH / 2, 168, 244, 16, 0x9b1c2a, 0.76).setStrokeStyle(1, 0xffd36e, 0.62);
 
-    this.add.rectangle(WIDTH / 2, 386, 314, 352, 0xd8fbff, 0.19).setStrokeStyle(3, 0xf4fdff, 0.82);
-    this.add.rectangle(WIDTH / 2, 394, 276, 330, 0x9b1c2a, 0.92);
-    this.add.rectangle(WIDTH / 2, 394, 256, 294, 0xb91f2e, 0.62);
+    this.add.rectangle(WIDTH / 2, 392, 314, 376, 0xd8fbff, 0.15).setStrokeStyle(3, 0xf4fdff, 0.74);
+    this.add.rectangle(WIDTH / 2, 390, 276, 344, 0x9b1c2a, 0.94);
+    this.add.rectangle(WIDTH / 2, 388, 248, 318, 0xb91f2e, 0.62);
     this.createMechanismBoard();
     this.add.rectangle(108, 394, 10, 314, 0xffffff, 0.13).setAngle(12);
     this.add.rectangle(WIDTH - 108, 394, 10, 314, 0xffffff, 0.1).setAngle(-12);
 
-    this.add.rectangle(WIDTH / 2, 198, 150, 34, 0x0d315f).setStrokeStyle(3, 0xd8e4f2);
-    this.dropHead = this.add.rectangle(this.feederX, 198, 58, 18, 0xf8e68d, 0.98).setStrokeStyle(2, 0xffffff).setDepth(8);
-    this.dropGuide = this.add.rectangle(this.feederX, 224, 9, 48, 0xffd84d, 0.96).setStrokeStyle(2, 0xfff2a8).setDepth(8);
-    this.dropGlow = this.add.circle(this.feederX, 248, 7, 0xfff2a8, 0.95).setDepth(9);
+    this.add.rectangle(WIDTH / 2, 199, 176, 24, 0x4b1020, 0.96).setStrokeStyle(2, 0xffd36e);
+    this.add.text(WIDTH / 2, 196, "摆臂出币口", {
+      color: "#fff1c7",
+      fontSize: "11px",
+      fontStyle: "700"
+    }).setOrigin(0.5).setDepth(9);
+    this.dropHead = this.add.rectangle(this.feederX, 216, 54, 12, 0xf8e68d, 0.98).setStrokeStyle(2, 0xffffff).setDepth(8);
+    this.dropGuide = this.add.rectangle(this.feederX, 246, 7, 48, 0xffd84d, 0.96).setStrokeStyle(2, 0xfff2a8).setDepth(8);
+    this.dropGlow = this.add.circle(this.feederX, 274, 6, 0xfff2a8, 0.95).setDepth(9);
     this.createGoldDeflectors();
 
     this.createStaticCoinBed();
-    this.add.rectangle(WIDTH / 2, 600, 150, 58, 0xf7f7f2).setStrokeStyle(3, 0x25344a).setDepth(8);
-    this.add.text(WIDTH / 2, 600, "中央修复槽", {
+    this.add.rectangle(WIDTH / 2, 576, 286, 46, 0xe6edf2, 0.96).setStrokeStyle(3, 0xffdf63).setDepth(3);
+    this.add.rectangle(WIDTH / 2, 605, 310, 24, 0xf8cf63, 0.98).setStrokeStyle(2, 0xfff2a8).setDepth(4);
+    this.add.rectangle(WIDTH / 2, 644, 130, 54, 0xf7f7f2).setStrokeStyle(3, 0x25344a).setDepth(8);
+    this.add.text(WIDTH / 2, 644, "中央槽", {
       color: "#07315f",
-      fontSize: "12px",
+      fontSize: "13px",
       fontStyle: "700"
     }).setOrigin(0.5).setDepth(9);
-    this.add.rectangle(114, 600, 74, 58, 0x0067cb).setStrokeStyle(3, 0x6ed7ff).setDepth(8);
-    this.add.rectangle(WIDTH - 114, 600, 74, 58, 0x0067cb).setStrokeStyle(3, 0x6ed7ff).setDepth(8);
-    this.add.text(114, 600, "回收", {
+    this.add.rectangle(103, 644, 78, 54, 0x0067cb).setStrokeStyle(3, 0x6ed7ff).setDepth(8);
+    this.add.rectangle(WIDTH - 103, 644, 78, 54, 0x0067cb).setStrokeStyle(3, 0x6ed7ff).setDepth(8);
+    this.add.text(103, 644, "回收", {
       color: "#d8f7ff",
       fontSize: "11px",
       fontStyle: "700"
     }).setOrigin(0.5).setDepth(9);
-    this.add.text(WIDTH - 114, 600, "回收", {
+    this.add.text(WIDTH - 103, 644, "回收", {
       color: "#d8f7ff",
       fontSize: "11px",
       fontStyle: "700"
     }).setOrigin(0.5).setDepth(9);
 
-    this.matter.add.rectangle(72, 382, 18, 406, { isStatic: true, label: "left-wall" });
-    this.matter.add.rectangle(WIDTH - 72, 382, 18, 406, { isStatic: true, label: "right-wall" });
+    this.matter.add.rectangle(72, 414, 18, 512, { isStatic: true, label: "left-wall" });
+    this.matter.add.rectangle(WIDTH - 72, 414, 18, 512, { isStatic: true, label: "right-wall" });
 
-    const aimZone = this.add.zone(WIDTH / 2, 198, 286, 90);
+    const aimZone = this.add.zone(WIDTH / 2, 208, 286, 96);
     aimZone.setInteractive({ useHandCursor: true });
     aimZone.on("pointerdown", () => {
       this.dropCoin(this.feederX);
@@ -304,20 +301,45 @@ class GameScene extends Phaser.Scene {
 
   private createGoldDeflectors(): void {
     [
-      { x: 172, y: 262, angle: -24 },
-      { x: 215, y: 248, angle: 18 },
-      { x: 258, y: 262, angle: -24 }
+      { x: 184, y: 270, angle: -20 },
+      { x: 246, y: 270, angle: 20 }
     ].forEach((guide) => {
-      this.add.rectangle(guide.x, guide.y, 10, 64, 0xf6d24b)
+      this.add.rectangle(guide.x, guide.y, 10, 58, 0xf6d24b)
         .setStrokeStyle(2, 0xfff2a8)
         .setAngle(guide.angle)
-        .setDepth(4);
-      this.matter.add.rectangle(guide.x, guide.y, 10, 64, {
+        .setDepth(10);
+      this.matter.add.rectangle(guide.x, guide.y, 10, 58, {
         isStatic: true,
         angle: Phaser.Math.DegToRad(guide.angle),
-        label: "gold-guide",
+        label: "deflector",
         friction: 0.02,
-        restitution: 0.7
+        restitution: 0.82
+      });
+    });
+
+    [
+      { x: 150, y: 314 },
+      { x: 215, y: 314 },
+      { x: 280, y: 314 },
+      { x: 132, y: 438 },
+      { x: 174, y: 430 },
+      { x: 215, y: 438 },
+      { x: 256, y: 430 },
+      { x: 298, y: 438 }
+    ].forEach((peg, index) => {
+      this.add.circle(peg.x, peg.y, 7, 0xd8e4f2, 0.96)
+        .setStrokeStyle(2, 0xffffff, 0.9)
+        .setDepth(10);
+      this.add.image(peg.x, peg.y, `coin-${this.save.activeSkin}`)
+        .setScale(0.13)
+        .setAngle(index * 31)
+        .setAlpha(0.62)
+        .setDepth(11);
+      this.matter.add.circle(peg.x, peg.y, 9, {
+        isStatic: true,
+        label: "peg",
+        friction: 0.01,
+        restitution: 0.92
       });
     });
   }
@@ -351,28 +373,23 @@ class GameScene extends Phaser.Scene {
       });
     });
 
-    [126, 174, 224, 274, 324].forEach((x, index) => {
-      this.add.image(x, 274 + (index % 2) * 8, `coin-${this.save.activeSkin}`).setScale(0.23).setAngle(index * 18 - 24).setDepth(6);
-      this.add.image(x + 8, 433 - (index % 2) * 7, `coin-${this.save.activeSkin}`).setScale(0.22).setAngle(24 - index * 14).setDepth(6);
-    });
-
   }
 
   private createStaticCoinBed(): void {
     for (let i = 0; i < 24; i += 1) {
       const x = 102 + (i % 12) * 18 + Phaser.Math.Between(-3, 3);
-      const y = 546 + Math.floor(i / 12) * 16 + Phaser.Math.Between(-2, 3);
+      const y = 586 + Math.floor(i / 12) * 14 + Phaser.Math.Between(-2, 3);
       this.add.image(x, y, `coin-${this.save.activeSkin}`)
         .setScale(0.26 + (i % 3) * 0.018)
         .setAngle(Phaser.Math.Between(-28, 28))
-        .setDepth(2);
+        .setDepth(5);
     }
   }
 
   private createPusher(): void {
-    this.pusherVisual = this.add.rectangle(WIDTH / 2, 538, 286, 36, 0xd8e4f2).setStrokeStyle(3, 0x8aa2bd).setDepth(6);
-    this.pusherShine = this.add.rectangle(WIDTH / 2, 528, 260, 7, 0xffffff, 0.35).setDepth(7);
-    this.pusher = this.matter.add.rectangle(WIDTH / 2, 538, 304, 48, {
+    this.pusherVisual = this.add.rectangle(WIDTH / 2, 524, 292, 28, 0xf8cf63).setStrokeStyle(3, 0xfff2a8).setDepth(12);
+    this.pusherShine = this.add.rectangle(WIDTH / 2, 516, 260, 6, 0xffffff, 0.34).setDepth(13);
+    this.pusher = this.matter.add.rectangle(WIDTH / 2, 524, 308, 34, {
       isStatic: true,
       label: "pusher",
       friction: 0.15
@@ -508,20 +525,20 @@ class GameScene extends Phaser.Scene {
   }
 
   private createHud(): void {
-    this.add.rectangle(101, 104, 150, 24, 0x06111f, 0.58).setStrokeStyle(1, 0x66d9ff, 0.45);
-    this.hud = this.add.text(33, 104, "", {
+    this.add.rectangle(112, 78, 164, 22, 0x06111f, 0.72).setStrokeStyle(1, 0x66d9ff, 0.45).setDepth(14);
+    this.hud = this.add.text(34, 78, "", {
       color: "#f4fbff",
       fontSize: "10px",
       fontStyle: "700"
-    }).setOrigin(0, 0.5);
+    }).setOrigin(0, 0.5).setDepth(15);
 
-    this.add.rectangle(WIDTH - 101, 104, 150, 24, 0x06111f, 0.5).setStrokeStyle(1, 0xaef27a, 0.38);
-    this.buffText = this.add.text(WIDTH - 33, 104, "", {
+    this.add.rectangle(WIDTH - 112, 78, 164, 22, 0x06111f, 0.62).setStrokeStyle(1, 0xaef27a, 0.38).setDepth(14);
+    this.buffText = this.add.text(WIDTH - 34, 78, "", {
       color: "#c8ff8c",
       fontSize: "10px",
       align: "right",
       fontStyle: "700"
-    }).setOrigin(1, 0.5);
+    }).setOrigin(1, 0.5).setDepth(15);
 
     this.add.rectangle(WIDTH / 2, 628, 332, 48, 0x653e29, 0.24).setStrokeStyle(1, 0xffe0a4, 0.32);
     this.tip = this.add.text(WIDTH / 2, 644, "看准顶部摆臂时机，点击推币", {
@@ -643,10 +660,10 @@ class GameScene extends Phaser.Scene {
   }
 
   private seedCoinPile(): void {
-    const count = Math.min(38, 22 + this.save.upgrades.slot * 2);
+    const count = Math.min(46, 26 + this.save.upgrades.slot * 2);
     for (let i = 0; i < count; i += 1) {
       const x = Phaser.Math.Between(112, 318);
-      const y = Phaser.Math.Between(552, 592);
+      const y = Phaser.Math.Between(574, 620);
       const coin = this.createPhysicalCoin(x, y);
       coin.setData("seeded", true);
     }
@@ -716,12 +733,12 @@ class GameScene extends Phaser.Scene {
 
     audioSystem.play("coinSpawn");
     vibratePreset("coinDrop");
-    this.particleSystem.spawnCoinSparkle(spawnX, 198);
+    this.particleSystem.spawnCoinSparkle(spawnX, 216);
 
     const x = Phaser.Math.Clamp(spawnX + Phaser.Math.Between(-6, 6), FEEDER_LEFT, FEEDER_RIGHT);
     const coin = this.createPhysicalCoin(x, 232);
     const lateralFromSwing = ((x - WIDTH / 2) / ((FEEDER_RIGHT - FEEDER_LEFT) / 2)) * 0.34;
-    coin.setVelocity(lateralFromSwing + this.feederDirection * 0.22, 0.82);
+    coin.setVelocity(lateralFromSwing + this.feederDirection * 0.24, 0.92);
     coin.setAngularVelocity(Phaser.Math.FloatBetween(-0.16, 0.16));
   }
 
@@ -759,10 +776,10 @@ class GameScene extends Phaser.Scene {
 
     const offset = (this.feederX - WIDTH / 2) / ((FEEDER_RIGHT - FEEDER_LEFT) / 2);
     const angle = offset * 17;
-    this.dropHead.setPosition(this.feederX, 198);
-    this.dropGuide.setPosition(this.feederX, 224);
+    this.dropHead.setPosition(this.feederX, 216);
+    this.dropGuide.setPosition(this.feederX, 246);
     this.dropGuide.setAngle(angle);
-    this.dropGlow.setPosition(this.feederX, 248);
+    this.dropGlow.setPosition(this.feederX, 274);
   }
 
   private updateDuck(delta: number): void {
@@ -790,11 +807,11 @@ class GameScene extends Phaser.Scene {
       const coin = this.coins[i];
       const { x, y } = coin;
       const age = this.time.now - ((coin.getData("spawnedAt") as number | undefined) ?? this.time.now);
-      if (coin.body && age > 4500 && y < 520 && coin.body.velocity.y < 0.5) {
+      if (coin.body && age > 4500 && y < 500 && coin.body.velocity.y < 0.5) {
         coin.setVelocity(coin.body.velocity.x * 0.75, 1.1);
       }
       const autoCollectActive = this.save.buffs.autoCollectUntil > Date.now();
-      if (y < 608 && !(autoCollectActive && y > 560)) continue;
+      if (y < DROP_LINE_Y && !(autoCollectActive && y > AUTO_COLLECT_LINE_Y)) continue;
       let reward = Phaser.Math.Between(1, 3);
       const isCenter = x > CENTER_SLOT_LEFT && x < CENTER_SLOT_RIGHT;
       if (isCenter) {
@@ -815,7 +832,7 @@ class GameScene extends Phaser.Scene {
       }
       this.save.gold += reward;
       increaseMission(this.save, "earnGold", reward);
-      this.spawnRewardText(x, Math.min(y - 16, 580), `+${reward}`);
+      this.spawnRewardText(x, Math.min(y - 16, 626), `+${reward}`);
       this.particleSystem.spawnGoldFlyToHud(x, y, 33, 104);
       this.recycleCoin(coin);
       this.coins.splice(i, 1);

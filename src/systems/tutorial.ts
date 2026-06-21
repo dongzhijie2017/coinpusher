@@ -23,7 +23,7 @@ export const tutorialSteps: TutorialStepConfig[] = [
     id: "duck_sensor",
     text: "注意中间移动的小黄鸭！\n硬币砸中它会触发机关检索",
     x: 215,
-    y: 452,
+    y: 466,
     width: 120,
     height: 60
   },
@@ -31,9 +31,9 @@ export const tutorialSteps: TutorialStepConfig[] = [
     id: "center_slot",
     text: "中间宽槽是中央修复槽，\n掉进去收益更高！",
     x: 215,
-    y: 600,
-    width: 150,
-    height: 58
+    y: 644,
+    width: 130,
+    height: 54
   },
   {
     id: "upgrade",
